@@ -7,22 +7,100 @@ import { QuestionWithAnswer } from "../api/evaluate-answers/types"
 import ReactMarkdown from 'react-markdown'
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { supabase } from "../../lib/supabase"
+
+// Define types for our data
+interface NarrativeExercise {
+  id: number
+  title: string
+  story_text: string
+  time_limit: number
+  description?: string
+  questions: Question[]
+}
+
+interface Question {
+  id: number
+  question_text: string
+  ideal_answer: string
+  question_order: number
+}
 
 export default function SectionB() {
   const router = useRouter()
   const [currentQuestion, setCurrentQuestion] = useState(1)
-  const totalQuestions = 3
-  const [answers, setAnswers] = useState({
-    1: "",
-    2: "",
-    3: ""
-  })
+  const [answers, setAnswers] = useState<Record<number, string>>({})
   const [feedback, setFeedback] = useState("")
   const [score, setScore] = useState(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showFeedback, setShowFeedback] = useState(false)
   const [timeRemaining, setTimeRemaining] = useState({ minutes: 30, seconds: 0 })
   const [saveStatus, setSaveStatus] = useState("")
+  const [exercise, setExercise] = useState<NarrativeExercise | null>(null)
+  const [questions, setQuestions] = useState<Record<number, Question>>({})
+  const [loading, setLoading] = useState(true)
+  const [totalQuestions, setTotalQuestions] = useState(0)
+  
+  // Fetch exercise and questions data from Supabase
+  useEffect(() => {
+    async function fetchExerciseData() {
+      try {
+        setLoading(true)
+        
+        // Check if there's a specific exercise ID in the URL
+        const searchParams = new URLSearchParams(window.location.search)
+        const exerciseId = searchParams.get('exercise')
+        
+        // Fetch the narrative exercise
+        let exerciseQuery = supabase
+          .from('narrative_exercises')
+          .select('*')
+        
+        
+        
+        const { data: exerciseData, error: exerciseError } = await exerciseQuery.single()
+        
+        if (exerciseError) throw exerciseError
+        
+        setExercise(exerciseData)
+        
+        // Set time limit from exercise
+        if (exerciseData.time_limit) {
+          setTimeRemaining({ 
+            minutes: Math.floor(exerciseData.time_limit / 60), 
+            seconds: exerciseData.time_limit % 60 
+          })
+        }
+        
+        // Get questions from the exercise data
+        const questionsData = exerciseData.questions || []
+        
+        // Convert array to record object with question id as key
+        const questionRecord = questionsData.reduce((acc, question) => {
+          acc[question.id] = question
+          return acc
+        }, {})
+        
+        setQuestions(questionRecord)
+        
+        // Initialize answers state with empty strings for each question
+        const initialAnswers = questionsData.reduce((acc, question) => {
+          acc[question.id] = ""
+          return acc
+        }, {})
+        
+        setAnswers(initialAnswers)
+        setTotalQuestions(questionsData.length)
+        
+      } catch (error) {
+        console.error('Error fetching exercise data:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    fetchExerciseData()
+  }, [])
   
   // Load saved progress when component mounts
   useEffect(() => {
@@ -120,13 +198,18 @@ export default function SectionB() {
       const recentSessionsStr = localStorage.getItem('recentSessions')
       const recentSessions = recentSessionsStr ? JSON.parse(recentSessionsStr) : []
       
+      // Calculate progress based on non-empty answers
+      const questionCount = Object.keys(questions).length || 1  // Avoid division by zero
+      const answeredCount = Object.values(answers).filter(a => a && String(a).trim() !== '').length
+      const progressPercentage = (answeredCount / questionCount) * 100
+      
       // Add to recent sessions, replacing any existing session for this section
       const updatedRecentSessions = [
         {
           id: 'sectionB',
           section: "B",
           name: "Narrative Comprehension",
-          progress: Object.values(answers).filter(a => a.trim() !== '').length / 3 * 100,
+          progress: progressPercentage,
           lastSaved: new Date().toISOString(),
           status: "in-progress"
         },
@@ -146,24 +229,6 @@ export default function SectionB() {
     }
   }
   
-  const questions = {
-    1: {
-      id: 1,
-      text: "What is the main character's attitude toward the forest?",
-      answer: "Elara is curious and drawn to the forest, unlike the other villagers who fear it. She's adventurous and interested in its secrets."
-    },
-    2: {
-      id: 2,
-      text: "What does the grandmother's warning suggest about the forest?",
-      answer: "The grandmother's warning suggests the forest is magical but potentially dangerous. It gives gifts that come with a price, indicating it has a dual nature of beauty and risk."
-    },
-    3: {
-      id: 3,
-      text: "What literary device is used in \"The Whispering Woods\"?",
-      answer: "Personification is used in 'The Whispering Woods' - the forest is given human-like qualities such as whispering and giving gifts."
-    }
-  }
-
   // Format time display properly with leading zeros
   const formatTime = () => {
     const minutes = timeRemaining.minutes.toString().padStart(2, '0')
@@ -181,27 +246,18 @@ export default function SectionB() {
   const handleSubmit = async () => {
     setIsSubmitting(true)
     try {
-      const storyText = "This story focuses on a young woman named Amara who moves to a new city for her dream job. Initially overwhelmed by the unfamiliar environment, she struggles with loneliness and self-doubt. Through small acts of courage, like exploring her neighborhood and joining a local community garden, she gradually builds connections. The narrative explores themes of belonging, personal growth, and finding community in unexpected places. By the end, Amara has not only adapted to her new home but has created a meaningful life there through her openness to new experiences.";
+      if (!exercise) {
+        throw new Error('No exercise data available')
+      }
       
-      const questionsWithAnswers: QuestionWithAnswer[] = [
-        {
-          question: questions[1].text,
-          idealAnswer: questions[1].answer,
-          userAnswer: answers[1]
-        },
-        {
-          question: questions[2].text,
-          idealAnswer: questions[2].answer,
-          userAnswer: answers[2]
-        },
-        {
-          question: questions[3].text,
-          idealAnswer: questions[3].answer,
-          userAnswer: answers[3]
-        }
-      ];
+      // Prepare the questions with answers for evaluation
+      const questionsWithAnswers: QuestionWithAnswer[] = Object.values(questions).map(q => ({
+        question: q.question_text,
+        idealAnswer: q.ideal_answer,
+        userAnswer: answers[q.id] || ''
+      }));
 
-      const result = await evaluateAnswers(storyText, questionsWithAnswers);
+      const result = await evaluateAnswers(exercise.story_text, questionsWithAnswers);
       
       // Check that we have valid feedback and score
       if (result && result.feedback) {
@@ -290,6 +346,36 @@ export default function SectionB() {
     return feedbackString;
   };
   
+  // If still loading, show a loading indicator
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#f5f9ff] flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  // If no exercise data found, show an error
+  if (!exercise) {
+    return (
+      <div className="min-h-screen bg-[#f5f9ff] flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto p-6 bg-white rounded-xl shadow-sm">
+          <h2 className="text-xl font-bold text-gray-800 mb-2">Exercise Not Found</h2>
+          <p className="text-gray-600 mb-4">We couldn't find the narrative comprehension exercise.</p>
+          <Link href="/" className="inline-block bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+            Return to Dashboard
+          </Link>
+        </div>
+      </div>
+    );
+  }
+  
+  // Extract question IDs for rendering
+  const questionIds = Object.keys(questions).map(id => parseInt(id));
+  
   return (
     <div className="min-h-screen bg-[#f5f9ff]">
       {/* Header */}
@@ -299,7 +385,7 @@ export default function SectionB() {
             <Link href="/" className="flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-600 rounded-full hover:bg-blue-200 transition-colors">
               <Home size={18} />
             </Link>
-            <h1 className="text-xl font-medium text-gray-800">Section B – Narrative Comprehension</h1>
+            <h1 className="text-xl font-medium text-gray-800">Section B – {exercise.title}</h1>
           </div>
           <div className="flex items-center gap-6">
             <div className="relative">
@@ -328,9 +414,6 @@ export default function SectionB() {
               </svg>
               <span>{formatTime()}</span>
             </div>
-            {/* <div className="text-gray-600">
-              Question {currentQuestion} of {totalQuestions}
-            </div> */}
           </div>
         </div>
       </header>
@@ -340,91 +423,38 @@ export default function SectionB() {
           {/* Left panel - Story Display */}
           <div>
             <div className="bg-white rounded-2xl shadow-sm p-6">
-              <h2 className="text-xl font-bold text-gray-800 mb-4">The Enchanted Forest</h2>
+              <h2 className="text-xl font-bold text-gray-800 mb-4">{exercise.title}</h2>
               <div className="prose max-w-none text-gray-700">
-                <p>
-                  Once upon a time, in a small village nestled at the edge of a vast forest known to locals as "The Whispering Woods," there lived a curious young girl named Elara. Unlike the other villagers who feared the dense, mysterious forest, Elara was drawn to its secrets and the strange sounds that seemed to call to her at night.
-                </p>
-                <p>
-                  One misty morning, Elara discovered a peculiar blue flower with luminescent petals growing just beyond her garden fence. She had never seen anything like it before, and as she reached out to touch it, the flower seemed to glow even brighter, as if responding to her presence.
-                </p>
-                <p>
-                  Her grandmother, a wise woman respected in the village for her knowledge of old folklore, warned her about the forest's enchantments. "The forest gives gifts," she said, her eyes reflecting wisdom accumulated over decades, "but every gift comes with a price. Be careful what you accept from the Whispering Woods."
-                </p>
-                <p>
-                  Elara, unable to resist the call of adventure, kept the strange flower in a jar by her bedside. That night, she dreamed of towering trees with faces, talking animals, and a silver path that led deeper into the heart of the forest. When she awoke, she found small blue petals scattered across her bedroom floor, forming a trail that led to her window—and beyond, toward the edge of the Whispering Woods.
-                </p>
-                <p>
-                  The decision she faced would change everything. Should she follow the mysterious path into the unknown, or heed her grandmother's warning about the forest's unpredictable nature?
-                </p>
+                <ReactMarkdown>
+                  {exercise.story_text}
+                </ReactMarkdown>
               </div>
             </div>
           </div>
 
           {/* Right panel - Questions */}
           <div className="space-y-6">
-            {/* Question 1 */}
-            <div className="bg-white rounded-2xl shadow-sm p-6">
-              <div className="flex items-center gap-4 mb-4">
-                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium">
-                  {questions[1].id}
+            {questionIds.map(questionId => (
+              <div key={questionId} className="bg-white rounded-2xl shadow-sm p-6">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium">
+                    {questions[questionId].question_order || questionId}
+                  </div>
+                  <h2 className="text-lg font-medium text-gray-800">{questions[questionId].question_text}</h2>
+                  <button className="text-gray-400 hover:text-gray-600 transition-colors ml-auto">
+                    <HelpCircle className="w-5 h-5" />
+                  </button>
                 </div>
-                <h2 className="text-lg font-medium text-gray-800">{questions[1].text}</h2>
-                <button className="text-gray-400 hover:text-gray-600 transition-colors ml-auto">
-                  <HelpCircle className="w-5 h-5" />
-                </button>
-              </div>
-              <div>
-                <textarea
-                  className="w-full h-24 p-4 border text-gray-700 border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Type your answer here..."
-                  value={answers[1]}
-                  onChange={(e) => handleAnswerChange(1, e.target.value)}
-                />
-              </div>
-            </div>
-
-            {/* Question 2 */}
-            <div className="bg-white rounded-2xl shadow-sm p-6">
-              <div className="flex items-center gap-4 mb-4">
-                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium">
-                  {questions[2].id}
+                <div>
+                  <textarea
+                    className="w-full h-24 p-4 border text-gray-700 border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Type your answer here..."
+                    value={answers[questionId] || ''}
+                    onChange={(e) => handleAnswerChange(questionId, e.target.value)}
+                  />
                 </div>
-                <h2 className="text-lg font-medium text-gray-800">{questions[2].text}</h2>
-                <button className="text-gray-400 hover:text-gray-600 transition-colors ml-auto">
-                  <HelpCircle className="w-5 h-5" />
-                </button>
               </div>
-              <div>
-                <textarea
-                  className="w-full h-24 p-4 border text-gray-700 border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Type your answer here..."
-                  value={answers[2]}
-                  onChange={(e) => handleAnswerChange(2, e.target.value)}
-                />
-              </div>
-            </div>
-
-            {/* Question 3 */}
-            <div className="bg-white rounded-2xl shadow-sm p-6">
-              <div className="flex items-center gap-4 mb-4">
-                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium">
-                  {questions[3].id}
-                </div>
-                <h2 className="text-lg font-medium text-gray-800">{questions[3].text}</h2>
-                <button className="text-gray-400 hover:text-gray-600 transition-colors ml-auto">
-                  <HelpCircle className="w-5 h-5" />
-                </button>
-              </div>
-              <div>
-                <textarea
-                  className="w-full h-24 p-4 border text-gray-700 border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Type your answer here..."
-                  value={answers[3]}
-                  onChange={(e) => handleAnswerChange(3, e.target.value)}
-                />
-              </div>
-            </div>
+            ))}
           </div>
         </div>
 

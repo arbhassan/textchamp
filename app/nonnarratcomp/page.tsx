@@ -7,66 +7,139 @@ import { QuestionWithAnswer } from "../api/evaluate-answers/types"
 import ReactMarkdown from 'react-markdown'
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { supabase } from "../../lib/supabase"
+
+// Define types for our data
+interface NonNarrativeExercise {
+  id: number
+  title: string
+  passage_text: string
+  time_limit: number
+  description?: string
+  questions: Question[]
+}
+
+interface Question {
+  id: number
+  question_text: string
+  ideal_answer: string
+  question_order: number
+}
 
 export default function SectionC() {
   const router = useRouter()
   const [wordCount, setWordCount] = useState(0)
-  const [answers, setAnswers] = useState({
-    1: "",
-    2: "",
-    3: ""
-  })
+  const [answers, setAnswers] = useState<Record<number, string>>({})
   const [feedback, setFeedback] = useState("")
   const [score, setScore] = useState(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showFeedback, setShowFeedback] = useState(false)
   const [timeRemaining, setTimeRemaining] = useState({ minutes: 25, seconds: 0 })
   const [saveStatus, setSaveStatus] = useState("")
+  const [exercise, setExercise] = useState<NonNarrativeExercise | null>(null)
+  const [questions, setQuestions] = useState<Question[]>([])
+  const [loading, setLoading] = useState(true)
   
-  // Load saved progress when component mounts
+  // Fetch exercise and questions data from Supabase
   useEffect(() => {
-    // Check if we're resuming a saved session
-    const searchParams = new URLSearchParams(window.location.search)
-    const isResuming = searchParams.get('resume') === 'true'
-    
-    if (isResuming) {
+    async function fetchExerciseData() {
       try {
-        // Check if this session is completed first
-        const recentSessionsStr = localStorage.getItem('recentSessions')
-        if (recentSessionsStr) {
-          const recentSessions = JSON.parse(recentSessionsStr)
-          const sectionSession = recentSessions.find(s => s.id === 'sectionC')
-          
-          // If session exists and is completed, redirect back to dashboard
-          if (sectionSession && sectionSession.status === "completed") {
-            router.push('/')
-            return
-          }
+        setLoading(true)
+        
+        // Check if there's a specific exercise ID in the URL
+        const searchParams = new URLSearchParams(window.location.search)
+        const exerciseId = searchParams.get('exercise')
+        
+        // Fetch the non-narrative exercise
+        let exerciseQuery = supabase
+          .from('non_narrative_exercises')
+          .select('*')
+        
+        // If we have a specific exercise ID, use it; otherwise get a random one
+        if (exerciseId) {
+          exerciseQuery = exerciseQuery.eq('id', exerciseId)
+        } else {
+          // If no specific ID is provided, get the first exercise
+          exerciseQuery = exerciseQuery.order('id', { ascending: true }).limit(1)
         }
         
-        const savedSession = localStorage.getItem('savedSession_sectionC')
+        const { data: exerciseData, error: exerciseError } = await exerciseQuery.single()
         
-        if (savedSession) {
-          const session = JSON.parse(savedSession)
-          
-          if (session.answers) {
-            setAnswers(session.answers)
-            
-            // Recalculate word count for answer 2 (summary)
-            if (session.answers[2]) {
-              const words = session.answers[2].trim().split(/\s+/).filter(Boolean).length
-              setWordCount(words)
+        if (exerciseError) throw exerciseError
+        
+        // Set exercise data
+        setExercise(exerciseData)
+        
+        // Get questions from the JSONB field
+        const exerciseQuestions = exerciseData.questions as Question[]
+        
+        // Sort questions by order
+        const sortedQuestions = [...exerciseQuestions].sort((a, b) => a.question_order - b.question_order)
+        setQuestions(sortedQuestions)
+        
+        // Set time remaining based on the exercise's time limit (converting from seconds to minutes/seconds)
+        const totalSeconds = exerciseData.time_limit || 1500 // Default to 25 minutes if not specified
+        setTimeRemaining({
+          minutes: Math.floor(totalSeconds / 60),
+          seconds: totalSeconds % 60
+        })
+        
+        // Initialize empty answers for each question
+        const initialAnswers: Record<number, string> = {}
+        sortedQuestions.forEach(q => {
+          initialAnswers[q.id] = ""
+        })
+        setAnswers(initialAnswers)
+        
+        // Check if we're resuming a saved session
+        const isResuming = searchParams.get('resume') === 'true'
+        if (isResuming) {
+          try {
+            // Check if this session is completed first
+            const recentSessionsStr = localStorage.getItem('recentSessions')
+            if (recentSessionsStr) {
+              const recentSessions = JSON.parse(recentSessionsStr)
+              const sectionSession = recentSessions.find(s => s.id === 'sectionC')
+              
+              // If session exists and is completed, redirect back to dashboard
+              if (sectionSession && sectionSession.status === "completed") {
+                router.push('/')
+                return
+              }
             }
-          }
-          
-          if (session.timeRemaining) {
-            setTimeRemaining(session.timeRemaining)
+            
+            const savedSession = localStorage.getItem('savedSession_sectionC')
+            
+            if (savedSession) {
+              const session = JSON.parse(savedSession)
+              
+              if (session.answers) {
+                setAnswers(session.answers)
+                
+                // Recalculate word count for answer 2 (summary)
+                const summaryQuestionId = sortedQuestions.find(q => q.question_order === 2)?.id
+                if (summaryQuestionId && session.answers[summaryQuestionId]) {
+                  const words = session.answers[summaryQuestionId].trim().split(/\s+/).filter(Boolean).length
+                  setWordCount(words)
+                }
+              }
+              
+              if (session.timeRemaining) {
+                setTimeRemaining(session.timeRemaining)
+              }
+            }
+          } catch (error) {
+            console.error('Error loading saved session:', error)
           }
         }
       } catch (error) {
-        console.error('Error loading saved session:', error)
+        console.error('Error fetching exercise data:', error)
+      } finally {
+        setLoading(false)
       }
     }
+    
+    fetchExerciseData()
   }, [router])
   
   // Start the timer countdown
@@ -131,7 +204,7 @@ export default function SectionC() {
           id: 'sectionC',
           section: "C",
           name: "Non-Narrative Comprehension",
-          progress: Object.values(answers).filter(a => a.trim() !== '').length / 3 * 100,
+          progress: Object.values(answers).filter(a => a.trim() !== '').length / Math.max(1, questions.length) * 100,
           lastSaved: new Date().toISOString(),
           status: "in-progress"
         },
@@ -151,27 +224,6 @@ export default function SectionC() {
     }
   }
   
-  const currentQuestion = 1
-  const totalQuestions = 3
-
-  const questions = {
-    1: {
-      id: 1,
-      text: "What is the central theme of the passage? Support your answer with evidence.",
-      answer: "The central theme is the rapid advancement of AI technology and its implications for society. Evidence includes the references to AI reshaping the world, becoming more sophisticated, and the ethical considerations it raises including privacy, accountability, and employment impacts."
-    },
-    2: {
-      id: 2,
-      text: "Write a summary of the passage in no more than 80 words.",
-      answer: "AI technology is rapidly advancing and transforming various sectors. Recent breakthroughs in machine learning have enabled AI systems to process language and visual data with exceptional accuracy. However, this integration raises ethical concerns about privacy, accountability, and employment impacts. Experts emphasize the need for regulatory frameworks to maximize benefits while minimizing risks."
-    },
-    3: {
-      id: 3,
-      text: "What ethical concerns does the passage highlight about AI development?",
-      answer: "The passage highlights ethical concerns about privacy, accountability, and the potential impact on employment. It emphasizes the need for robust regulatory frameworks to ensure AI technologies benefit humanity while minimizing potential risks."
-    }
-  }
-
   // Format time display properly with leading zeros
   const formatTime = () => {
     const minutes = timeRemaining.minutes.toString().padStart(2, '0')
@@ -184,40 +236,35 @@ export default function SectionC() {
       ...prev,
       [questionId]: value
     }))
+    
+    // If this is the summary question (question_order === 2), update word count
+    const summaryQuestion = questions.find(q => q.question_order === 2)
+    if (summaryQuestion && questionId === summaryQuestion.id) {
+      const words = value.trim().split(/\s+/).filter(Boolean).length
+      setWordCount(words)
+    }
   }
 
   const handleSubmit = async () => {
+    if (!exercise) return
+    
     setIsSubmitting(true)
     try {
-      const articleText = "Climate change represents one of the most pressing challenges of our time, with far-reaching implications for the environment, economy, and human well-being. Scientists have observed significant shifts in global temperature patterns, with the past decade recording the highest average temperatures in modern history. These changes are primarily attributed to human activities, particularly the release of greenhouse gases from fossil fuel combustion, deforestation, and industrial processes.\n\nThe consequences of climate change are already evident worldwide. Rising sea levels threaten coastal communities and small island nations, while increasingly frequent and severe weather events—including hurricanes, floods, and droughts—impact agricultural productivity and human safety. Biodiversity loss accelerates as ecosystems struggle to adapt to rapidly changing conditions, potentially disrupting vital ecosystem services upon which human societies depend.\n\nAddressing climate change requires coordinated global action. International agreements like the Paris Climate Accord establish frameworks for reducing emissions and supporting adaptation efforts. Technological innovations in renewable energy, energy efficiency, and carbon capture present promising solutions. Meanwhile, shifts in consumer behavior, corporate practices, and public policy are essential complementary strategies.\n\nImportantly, climate action presents not just challenges but opportunities. Transitioning to clean energy systems can create jobs, improve public health, and enhance energy security. Sustainable urban planning can create more livable communities, while ecosystem restoration can preserve vital natural resources and services.\n\nWhile the scale of the climate challenge is immense, the collective capacity for innovation and adaptation offers reason for cautious optimism. Effective climate action will require unprecedented coordination across sectors and borders, but the benefits of success—and the costs of inaction—make this effort essential for securing a sustainable future for coming generations.";
-      
-      const questionsWithAnswers: QuestionWithAnswer[] = [
-        {
-          question: questions[1].text,
-          idealAnswer: questions[1].answer,
-          userAnswer: answers[1]
-        },
-        {
-          question: questions[2].text,
-          idealAnswer: questions[2].answer,
-          userAnswer: answers[2]
-        },
-        {
-          question: questions[3].text,
-          idealAnswer: questions[3].answer,
-          userAnswer: answers[3]
-        }
-      ];
+      const questionsWithAnswers: QuestionWithAnswer[] = questions.map(question => ({
+        question: question.question_text,
+        idealAnswer: question.ideal_answer,
+        userAnswer: answers[question.id] || ""
+      }))
 
-      const result = await evaluateAnswers(articleText, questionsWithAnswers);
+      const result = await evaluateAnswers(exercise.passage_text, questionsWithAnswers)
       
       // Check that we have valid feedback and score
       if (result && result.feedback) {
-        setFeedback(result.feedback);
+        setFeedback(result.feedback)
         // Ensure score is properly converted to a number
-        const finalScore = typeof result.score === 'number' ? result.score : Number(result.score) || 0;
-        setScore(finalScore);
-        setShowFeedback(true);
+        const finalScore = typeof result.score === 'number' ? result.score : Number(result.score) || 0
+        setScore(finalScore)
+        setShowFeedback(true)
         
         // Update saved session status to completed
         try {
@@ -249,54 +296,84 @@ export default function SectionC() {
             name: "Non-Narrative Comprehension",
             score: finalScore,
             completedAt: new Date().toISOString()
-          };
+          }
           
           // Get existing results from localStorage
-          const storedResults = localStorage.getItem('practiceResults');
-          const existingResults = storedResults ? JSON.parse(storedResults) : [];
+          const storedResults = localStorage.getItem('practiceResults')
+          const existingResults = storedResults ? JSON.parse(storedResults) : []
           
           // Add new result
-          const updatedResults = [...existingResults, practiceResult];
+          const updatedResults = [...existingResults, practiceResult]
           
           // Save to localStorage
-          localStorage.setItem('practiceResults', JSON.stringify(updatedResults));
+          localStorage.setItem('practiceResults', JSON.stringify(updatedResults))
           
           // Dispatch an event to notify other components that a practice is complete
-          window.dispatchEvent(new CustomEvent('practiceComplete'));
+          window.dispatchEvent(new CustomEvent('practiceComplete'))
         } catch (error) {
-          console.error('Error saving practice result:', error);
+          console.error('Error saving practice result:', error)
         }
       } else {
-        throw new Error('Received invalid feedback from evaluation');
+        throw new Error('Received invalid feedback from evaluation')
       }
     } catch (error) {
-      console.error('Error evaluating answers:', error);
-      setFeedback("There was an error evaluating your answers. Please try again.");
-      setScore(0);
-      setShowFeedback(true);
+      console.error('Error evaluating answers:', error)
+      setFeedback("There was an error evaluating your answers. Please try again.")
+      setScore(0)
+      setShowFeedback(true)
     } finally {
-      setIsSubmitting(false);
+      setIsSubmitting(false)
     }
-  };
+  }
   
   // Function to calculate the circumference for the circular progress bar
   const calculateCircleProgress = (score) => {
-    const radius = 50;
-    const circumference = 2 * Math.PI * radius;
-    const offset = circumference - (score / 5) * circumference;
-    return { circumference, offset };
-  };
+    const radius = 50
+    const circumference = 2 * Math.PI * radius
+    const offset = circumference - (score / 5) * circumference
+    return { circumference, offset }
+  }
   
   // Format feedback with line breaks and highlight key points
   const formatFeedback = (feedbackText) => {
-    if (!feedbackText) return "";
+    if (!feedbackText) return ""
     
     // Ensure feedbackText is a string
-    const feedbackString = String(feedbackText);
+    const feedbackString = String(feedbackText)
     
     // Return the markdown content directly - we'll use ReactMarkdown to render it
-    return feedbackString;
-  };
+    return feedbackString
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#f5f9ff] flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading exercise...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!exercise || questions.length === 0) {
+    return (
+      <div className="min-h-screen bg-[#f5f9ff] flex items-center justify-center">
+        <div className="text-center p-6 bg-white rounded-xl shadow-sm max-w-md">
+          <div className="text-red-500 mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-16 h-16 mx-auto">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">Exercise Not Found</h2>
+          <p className="text-gray-600 mb-6">We couldn't find the requested exercise. It may not exist or there was an error loading it.</p>
+          <Link href="/" className="inline-block bg-blue-600 text-white px-6 py-2 rounded-full font-medium hover:bg-blue-700 transition-colors">
+            Return to Dashboard
+          </Link>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-[#f5f9ff]">
@@ -345,106 +422,60 @@ export default function SectionC() {
           {/* Left panel - Passage Display */}
           <div>
             <div className="bg-white rounded-2xl shadow-sm p-6">
-              <h2 className="text-xl font-bold text-gray-800 mb-4">The Future of Artificial Intelligence</h2>
+              <h2 className="text-xl font-bold text-gray-800 mb-4">{exercise.title}</h2>
               <div className="prose max-w-none text-gray-700">
-                <p>
-                  The rapid advancement of artificial intelligence (AI) technology is reshaping our world in
-                  unprecedented ways. From healthcare to transportation, AI systems are becoming increasingly
-                  sophisticated and capable of handling complex tasks that were once thought to be exclusively human
-                  domains.
-                </p>
-                <p>
-                  Recent developments in machine learning algorithms have led to significant breakthroughs in natural
-                  language processing and computer vision. These advances have enabled AI systems to understand and
-                  respond to human speech with remarkable accuracy, translate between languages in real-time, and
-                  identify objects and patterns in images with precision that sometimes exceeds human capabilities.
-                </p>
-                <p>
-                  However, the integration of AI into society raises important ethical considerations. Questions about
-                  privacy, accountability, and the potential impact on employment have become central to the discourse
-                  surrounding AI development. Experts argue that establishing robust regulatory frameworks is crucial to
-                  ensure that AI technologies benefit humanity while minimizing potential risks.
-                </p>
+                {exercise.passage_text.split('\n\n').map((paragraph, idx) => (
+                  <p key={idx}>{paragraph}</p>
+                ))}
               </div>
             </div>
           </div>
 
           {/* Right panel - Questions */}
           <div className="space-y-6">
-            {/* Main Idea Question */}
-            <div className="bg-white rounded-2xl shadow-sm p-6">
-              <div className="flex items-center gap-4 mb-4">
-                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium">
-                  1
+            {questions.map((question) => {
+              const isMainIdea = question.question_order === 1
+              const isSummary = question.question_order === 2
+              const isAnalysis = question.question_order === 3
+              
+              let title = "Question"
+              if (isMainIdea) title = "Main Idea"
+              if (isSummary) title = "Summary Writing"
+              if (isAnalysis) title = "Critical Analysis"
+              
+              return (
+                <div key={question.id} className="bg-white rounded-2xl shadow-sm p-6">
+                  <div className="flex items-center gap-4 mb-4">
+                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium">
+                      {question.question_order}
+                    </div>
+                    <h2 className="text-lg font-medium text-gray-800">{title}</h2>
+                    <button className="text-gray-400 hover:text-gray-600 transition-colors ml-auto">
+                      <HelpCircle className="w-5 h-5" />
+                    </button>
+                  </div>
+                  <p className="mb-4 text-gray-700">
+                    {question.question_text}
+                  </p>
+                  <div>
+                    <textarea
+                      className="w-full h-24 p-4 border border-gray-200 text-gray-700 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder={isSummary ? "Write your summary here..." : "Type your answer here..."}
+                      value={answers[question.id] || ""}
+                      onChange={(e) => handleAnswerChange(question.id, e.target.value)}
+                    />
+                    {isSummary && (
+                      <div className="mt-2 text-sm text-gray-500 flex justify-between">
+                        <span>Word count: {wordCount}</span>
+                        <span className={wordCount > 80 ? "text-red-500" : "text-green-500"}>
+                          {wordCount > 80 ? "Exceeds limit" : "Within limit"}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <h2 className="text-lg font-medium text-gray-800">Main Idea</h2>
-                <button className="text-gray-400 hover:text-gray-600 transition-colors ml-auto">
-                  <HelpCircle className="w-5 h-5" />
-                </button>
-              </div>
-              <p className="mb-4 text-gray-700">
-                What is the central theme of the passage? Support your answer with evidence.
-              </p>
-              <div>
-                <textarea
-                  className="w-full h-24 p-4 border border-gray-200 text-gray-700 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Type your answer here..."
-                  value={answers[1]}
-                  onChange={(e) => handleAnswerChange(1, e.target.value)}
-                />
-              </div>
-            </div>
-
-            {/* Summary Section */}
-            <div className="bg-white rounded-2xl shadow-sm p-6">
-              <div className="flex items-center gap-4 mb-4">
-                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium">
-                  2
-                </div>
-                <h2 className="text-lg font-medium text-gray-800">Summary Writing</h2>
-                <button className="text-gray-400 hover:text-gray-600 transition-colors ml-auto">
-                  <HelpCircle className="w-5 h-5" />
-                </button>
-              </div>
-              <p className="mb-4 text-gray-700">Write a summary of the passage in no more than 80 words.</p>
-              <div>
-                <textarea
-                  className="w-full h-24 p-4 border border-gray-200 text-gray-700 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Write your summary here..."
-                  value={answers[2]}
-                  onChange={(e) => {
-                    const text = e.target.value;
-                    handleAnswerChange(2, text);
-                    const words = text.trim().split(/\s+/).filter(Boolean).length;
-                    setWordCount(words);
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* Analysis Question */}
-            <div className="bg-white rounded-2xl shadow-sm p-6">
-              <div className="flex items-center gap-4 mb-4">
-                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium">
-                  3
-                </div>
-                <h2 className="text-lg font-medium text-gray-800">Critical Analysis</h2>
-                <button className="text-gray-400 hover:text-gray-600 transition-colors ml-auto">
-                  <HelpCircle className="w-5 h-5" />
-                </button>
-              </div>
-              <p className="mb-4 text-gray-700">
-                What ethical concerns does the passage highlight about AI development?
-              </p>
-              <div>
-                <textarea
-                  className="w-full h-24 p-4 border border-gray-200 text-gray-700 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Type your answer here..."
-                  value={answers[3]}
-                  onChange={(e) => handleAnswerChange(3, e.target.value)}
-                />
-              </div>
-            </div>
+              )
+            })}
           </div>
         </div>
 

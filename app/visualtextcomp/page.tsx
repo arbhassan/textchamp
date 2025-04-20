@@ -7,22 +7,86 @@ import { QuestionWithAnswer } from "../api/evaluate-answers/types"
 import ReactMarkdown from 'react-markdown'
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { supabase } from "../../lib/supabase"
+import { VisualExercise, Question } from "../../lib/types"
 
 export default function SectionA() {
   const router = useRouter()
   const [currentQuestion, setCurrentQuestion] = useState(2)
   const totalQuestions = 5
-  const [answers, setAnswers] = useState({
-    1: "",
-    2: "",
-    3: ""
-  })
+  const [answers, setAnswers] = useState({})
   const [feedback, setFeedback] = useState("")
   const [score, setScore] = useState(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showFeedback, setShowFeedback] = useState(false)
   const [timeRemaining, setTimeRemaining] = useState({ minutes: 12, seconds: 30 })
   const [saveStatus, setSaveStatus] = useState("")
+  const [exercise, setExercise] = useState<VisualExercise | null>(null)
+  const [questions, setQuestions] = useState<Record<number, Question>>({})
+  const [loading, setLoading] = useState(true)
+  
+  // Fetch exercise and questions data from Supabase
+  useEffect(() => {
+    async function fetchExerciseData() {
+      try {
+        setLoading(true)
+        
+        // Check if there's a specific exercise ID in the URL
+        const searchParams = new URLSearchParams(window.location.search)
+        const exerciseId = searchParams.get('exercise')
+        
+        // Fetch the visual exercise
+        let exerciseQuery = supabase
+          .from('visual_exercises')
+          .select('*')
+        
+        // If we have a specific exercise ID, use it; otherwise get the first one with the title
+        if (exerciseId) {
+          exerciseQuery = exerciseQuery.eq('id', exerciseId)
+        } else {
+          exerciseQuery = exerciseQuery.eq('title', 'Visual Text Comprehension')
+        }
+        
+        const { data: exerciseData, error: exerciseError } = await exerciseQuery.single()
+        
+        if (exerciseError) throw exerciseError
+        
+        setExercise(exerciseData)
+        
+        // Fetch questions for this exercise
+        const { data: questionsData, error: questionsError } = await supabase
+          .from('questions')
+          .select('*')
+          .eq('exercise_id', exerciseData.id)
+          .order('question_order', { ascending: true })
+        
+        if (questionsError) throw questionsError
+        
+        // Convert array to record object with question id as key
+        const questionRecord = questionsData.reduce((acc, question) => {
+          acc[question.id] = question
+          return acc
+        }, {})
+        
+        setQuestions(questionRecord)
+        
+        // Initialize answers state with empty strings for each question
+        const initialAnswers = questionsData.reduce((acc, question) => {
+          acc[question.id] = ""
+          return acc
+        }, {})
+        
+        setAnswers(initialAnswers)
+        
+      } catch (error) {
+        console.error('Error fetching exercise data:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    fetchExerciseData()
+  }, [])
   
   // Load saved progress when component mounts
   useEffect(() => {
@@ -120,13 +184,18 @@ export default function SectionA() {
       const recentSessionsStr = localStorage.getItem('recentSessions')
       const recentSessions = recentSessionsStr ? JSON.parse(recentSessionsStr) : []
       
+      // Calculate progress based on non-empty answers
+      const questionCount = Object.keys(questions).length || 1  // Avoid division by zero
+      const answeredCount = Object.values(answers).filter(a => a && String(a).trim() !== '').length
+      const progressPercentage = (answeredCount / questionCount) * 100
+      
       // Add to recent sessions, replacing any existing session for this section
       const updatedRecentSessions = [
         {
           id: 'sectionA',
           section: "A",
           name: "Visual Text Comprehension",
-          progress: Object.values(answers).filter(a => a.trim() !== '').length / 3 * 100,
+          progress: progressPercentage,
           lastSaved: new Date().toISOString(),
           status: "in-progress"
         },
@@ -143,24 +212,6 @@ export default function SectionA() {
       console.error('Error saving progress:', error)
       setSaveStatus("Error saving")
       setTimeout(() => setSaveStatus(""), 2000)
-    }
-  }
-  
-  const questions = {
-    1: {
-      id: 1,
-      text: "What is the main message conveyed by the image?",
-      answer: "The main message is about environmental awareness and sustainability. The image likely depicts the impact of human actions on the environment and encourages viewers to take responsibility for environmental protection."
-    },
-    2: {
-      id: 2,
-      text: "How does the visual element support the text?",
-      answer: "The visual elements likely illustrate the text by showing environmental concerns visually (such as pollution, deforestation, or conservation efforts), making the message more impactful and emotionally engaging than text alone."
-    },
-    3: {
-      id: 3,
-      text: "What is the target audience for this advertisement?",
-      answer: "The target audience appears to be environmentally conscious individuals or the general public. The advertisement aims to increase awareness about environmental issues and motivate action among a broad audience."
     }
   }
 
@@ -181,25 +232,15 @@ export default function SectionA() {
   const handleSubmit = async () => {
     setIsSubmitting(true)
     try {
-      const visualDescription = "An environmental awareness advertisement showing the impact of human actions on the environment. The image depicts a contrast between healthy nature and environmental degradation, with accompanying text that calls for sustainable practices and environmental protection.";
+      // Use the exercise description or a fallback
+      const visualDescription = exercise?.description || "An environmental awareness advertisement showing the impact of human actions on the environment.";
       
-      const questionsWithAnswers: QuestionWithAnswer[] = [
-        {
-          question: questions[1].text,
-          idealAnswer: questions[1].answer,
-          userAnswer: answers[1]
-        },
-        {
-          question: questions[2].text,
-          idealAnswer: questions[2].answer,
-          userAnswer: answers[2]
-        },
-        {
-          question: questions[3].text,
-          idealAnswer: questions[3].answer,
-          userAnswer: answers[3]
-        }
-      ];
+      // Convert questions and answers to the format expected by evaluateAnswers
+      const questionsWithAnswers: QuestionWithAnswer[] = Object.values(questions).map(q => ({
+        question: q.text,
+        idealAnswer: q.ideal_answer,
+        userAnswer: answers[q.id] || ""
+      }));
 
       const result = await evaluateAnswers(visualDescription, questionsWithAnswers);
       
@@ -290,6 +331,38 @@ export default function SectionA() {
     return feedbackString;
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#f5f9ff] flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading exercise data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // If no exercise found
+  if (!exercise) {
+    return (
+      <div className="min-h-screen bg-[#f5f9ff] flex items-center justify-center">
+        <div className="text-center max-w-md p-6 bg-white rounded-xl shadow-sm">
+          <div className="text-red-500 mb-4">
+            <X size={48} className="mx-auto" />
+          </div>
+          <h2 className="text-2xl font-medium text-gray-800 mb-2">Exercise Not Found</h2>
+          <p className="text-gray-600 mb-6">We couldn't find the exercise data. This could be due to a connection issue or the exercise might not exist.</p>
+          <Link href="/" className="inline-flex items-center gap-2 bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors">
+            <Home size={20} />
+            <span>Return Home</span>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const sortedQuestions = Object.values(questions).sort((a, b) => a.question_order - b.question_order);
+
   return (
     <div className="min-h-screen bg-[#f5f9ff]">
       {/* Header */}
@@ -299,7 +372,7 @@ export default function SectionA() {
             <Link href="/" className="flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-600 rounded-full hover:bg-blue-200 transition-colors">
               <Home size={18} />
             </Link>
-            <h1 className="text-xl font-medium text-gray-800">Section A – Visual Text Comprehension</h1>
+            <h1 className="text-xl font-medium text-gray-800">Section A – {exercise.title || "Visual Text Comprehension"}</h1>
           </div>
           <div className="flex items-center gap-6">
             <div className="relative">
@@ -337,7 +410,11 @@ export default function SectionA() {
           {/* Left panel - Image Display */}
           <div>
             <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-              <img src="/environment-awareness.jpg" alt="Environmental Awareness" className="w-full" />
+              <img 
+                src={exercise.image_url || "/environment-awareness.jpg"} 
+                alt={exercise.title || "Visual Exercise"} 
+                className="w-full" 
+              />
               <div className="p-4 flex justify-center">
               </div>
             </div>
@@ -345,70 +422,27 @@ export default function SectionA() {
 
           {/* Right panel - Questions */}
           <div className="space-y-6">
-            {/* Question 1 */}
-            <div className="bg-white rounded-2xl shadow-sm p-6">
-              <div className="flex items-center gap-4 mb-4">
-                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium">
-                  1
+            {sortedQuestions.map((question, index) => (
+              <div key={question.id} className="bg-white rounded-2xl shadow-sm p-6">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium">
+                    {index + 1}
+                  </div>
+                  <h2 className="text-lg font-medium text-gray-800">{question.text}</h2>
+                  <button className="text-gray-400 hover:text-gray-600 transition-colors ml-auto">
+                    <HelpCircle className="w-5 h-5" />
+                  </button>
                 </div>
-                <h2 className="text-lg font-medium text-gray-800">{questions[1].text}</h2>
-                <button className="text-gray-400 hover:text-gray-600 transition-colors ml-auto">
-                  <HelpCircle className="w-5 h-5" />
-                </button>
-              </div>
-              <div>
-                <textarea
-                  className="w-full h-24 p-4 border border-gray-200 text-gray-700 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Type your answer here..."
-                  value={answers[1]}
-                  onChange={(e) => handleAnswerChange(1, e.target.value)}
-                />
-              </div>
-            </div>
-
-            {/* Question 2 */}
-            <div className="bg-white rounded-2xl shadow-sm p-6">
-              <div className="flex items-center gap-4 mb-4">
-                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium">
-                  2
+                <div>
+                  <textarea
+                    className="w-full h-24 p-4 border border-gray-200 text-gray-700 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Type your answer here..."
+                    value={answers[question.id] || ""}
+                    onChange={(e) => handleAnswerChange(question.id, e.target.value)}
+                  />
                 </div>
-                <h2 className="text-lg font-medium text-gray-800">{questions[2].text}</h2>
-                <button className="text-gray-400 hover:text-gray-600 transition-colors ml-auto">
-                  <HelpCircle className="w-5 h-5" />
-                </button>
               </div>
-              <div>
-                <textarea
-                  className="w-full h-24 p-4 border border-gray-200 text-gray-700 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Type your answer here..."
-                  value={answers[2]}
-                  onChange={(e) => handleAnswerChange(2, e.target.value)}
-                />
-              </div>
-            </div>
-
-            {/* Question 3 */}
-            <div className="bg-white rounded-2xl shadow-sm p-6">
-              <div className="flex items-center gap-4 mb-4">
-                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium">
-                  3
-                </div>
-                <h2 className="text-lg font-medium text-gray-800">
-                  {questions[3].text}
-                </h2>
-                <button className="text-gray-400 hover:text-gray-600 transition-colors ml-auto">
-                  <HelpCircle className="w-5 h-5" />
-                </button>
-              </div>
-              <div>
-                <textarea
-                  className="w-full h-24 p-4 border border-gray-200 text-gray-700 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Type your answer here..."
-                  value={answers[3]}
-                  onChange={(e) => handleAnswerChange(3, e.target.value)}
-                />
-              </div>
-            </div>
+            ))}
           </div>
         </div>
 
