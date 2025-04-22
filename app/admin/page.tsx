@@ -85,6 +85,7 @@ export default function AdminPanel() {
     ideal_answer: string;
     question_order: number;
     exercise_id?: number;
+    marks?: number;
     isNew?: boolean;
   }[]>([])
 
@@ -94,6 +95,7 @@ export default function AdminPanel() {
     question_text: string;
     ideal_answer: string;
     question_order: number;
+    marks?: number;
     isNew?: boolean;
   }[]>([])
 
@@ -117,6 +119,7 @@ export default function AdminPanel() {
     question_text: string;
     ideal_answer: string;
     question_order: number;
+    marks?: number;
     isNew?: boolean;
   }[]>([])
 
@@ -234,20 +237,64 @@ export default function AdminPanel() {
     }
   }
 
+  // Create a new visual exercise
+  const handleCreateExercise = () => {
+    setSelectedExercise(null);
+    setFormExercise({
+      title: "New Visual Exercise",
+      image_url: "",
+      description: ""
+    });
+    
+    // Initialize with one empty question
+    setFormQuestions([
+      {
+        text: "",
+        ideal_answer: "",
+        question_order: 1,
+        marks: 1,
+        isNew: true
+      }
+    ]);
+    
+    setImagePreview(null);
+    setImageFile(null);
+    setIsEditing(true);
+  };
+
   // Handle editing an existing exercise
   const handleEditExercise = async (exercise: VisualExercise) => {
-    setSelectedExercise(exercise)
-    setFormExercise({
-      id: exercise.id,
-      title: exercise.title,
-      image_url: exercise.image_url,
-      description: exercise.description || ""
-    })
-    
-    const questionsData = await fetchQuestionsForExercise(exercise.id)
-    setFormQuestions(questionsData.map(q => ({ ...q })))
-    setImagePreview(exercise.image_url)
-    setIsEditing(true)
+    try {
+      setSelectedExercise(exercise);
+      
+      // Set form data for editing
+      setFormExercise({
+        id: exercise.id,
+        title: exercise.title,
+        image_url: exercise.image_url,
+        description: exercise.description || ""
+      });
+      
+      // Fetch questions for this exercise
+      const questionsData = await fetchQuestionsForExercise(exercise.id);
+      
+      // Format questions for form
+      const questionsForForm = questionsData.map(q => ({
+        id: q.id,
+        text: q.text,
+        ideal_answer: q.ideal_answer,
+        question_order: q.question_order,
+        marks: q.marks || 1,
+        exercise_id: q.exercise_id
+      }));
+      
+      setFormQuestions(questionsForForm);
+      setIsEditing(true);
+      
+    } catch (error) {
+      console.error('Error preparing exercise for editing:', error);
+      setMessage({ text: "Failed to load exercise data", type: "error" });
+    }
   }
 
   // If not authenticated, show login form
@@ -318,15 +365,17 @@ export default function AdminPanel() {
 
   // Handle adding a new question to the form
   const handleAddQuestion = () => {
-    console.log("Adding new question to exercise", selectedExercise?.id);
+    const newOrder = formQuestions.length > 0 
+      ? Math.max(...formQuestions.map(q => q.question_order)) + 1 
+      : 1;
     
     setFormQuestions([
       ...formQuestions, 
       {
         text: "",
         ideal_answer: "",
-        question_order: formQuestions.length + 1,
-        exercise_id: selectedExercise?.id, // Ensure exercise_id is set
+        question_order: newOrder,
+        marks: 1,
         isNew: true
       }
     ]);
@@ -356,13 +405,16 @@ export default function AdminPanel() {
 
   // Handle changes to question form fields
   const handleQuestionChange = (index: number, e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target
-    const updatedQuestions = [...formQuestions]
+    const updatedQuestions = [...formQuestions];
+    const field = e.target.name;
+    const value = field === 'question_order' || field === 'marks' ? parseInt(e.target.value) || 0 : e.target.value;
+    
     updatedQuestions[index] = {
       ...updatedQuestions[index],
-      [name]: value
-    }
-    setFormQuestions(updatedQuestions)
+      [field]: value
+    };
+    
+    setFormQuestions(updatedQuestions);
   }
 
   // Upload image to Supabase storage
@@ -420,117 +472,154 @@ export default function AdminPanel() {
       const exerciseId = formExercise.id;
       console.log("Updating exercise with ID:", exerciseId);
 
-      // Update existing exercise
-      const { error } = await supabase
-        .from('visual_exercises')
-        .update({
-          title: formExercise.title,
-          image_url: imageUrl,
-          description: formExercise.description
-        })
-        .eq('id', exerciseId);
+      // Process based on whether this is a new exercise or an existing one
+      if (!exerciseId) {
+        // Creating a new exercise
+        // First insert the exercise to get its ID
+        const { data: newExercise, error: insertError } = await supabase
+          .from('visual_exercises')
+          .insert({
+            title: formExercise.title,
+            image_url: imageUrl,
+            description: formExercise.description
+          })
+          .select('id')
+          .single();
 
-      if (error) throw error;
+        if (insertError) throw insertError;
 
-      // Process questions
-      console.log("Processing questions for exercise ID:", exerciseId);
-      
-      // Keep track of all question IDs to keep (existing and newly created)
-      const keepIds = [];
-      
-      // Update or create questions
-      for (const question of formQuestions) {
-        if (!question.text.trim()) {
-          console.log("Skipping empty question");
-          continue;
-        }
-
-        if (question.id && !question.isNew) {
-          // Update existing question
-          console.log("Updating existing question ID:", question.id);
-          const { error: updateError } = await supabase
+        // Now insert all questions for the new exercise
+        for (const question of formQuestions) {
+          const { error: insertQuestionError } = await supabase
             .from('questions')
-            .update({
+            .insert({
               text: question.text,
               ideal_answer: question.ideal_answer,
-              question_order: question.question_order
-            })
-            .eq('id', question.id);
+              question_order: question.question_order,
+              marks: question.marks || 1,
+              exercise_id: newExercise.id
+            });
 
-          if (updateError) {
-            console.error("Error updating question:", updateError);
-            throw updateError;
-          }
-          // Add this ID to our keep list
-          keepIds.push(question.id);
-        } else {
-          // Create new question
-          console.log("Creating new question for exercise ID:", exerciseId);
-          const newQuestion = {
-            exercise_id: exerciseId,
-            text: question.text,
-            ideal_answer: question.ideal_answer,
-            question_order: question.question_order
-          };
-          console.log("New question data:", newQuestion);
-          
-          const { data: insertData, error: insertError } = await supabase
-            .from('questions')
-            .insert(newQuestion)
-            .select();
+          if (insertQuestionError) throw insertQuestionError;
+        }
 
-          if (insertError) {
-            console.error("Error inserting question:", insertError);
-            throw insertError;
+        setMessage({ text: "New exercise created successfully", type: "success" });
+      } else {
+        // Update existing exercise
+        const { error } = await supabase
+          .from('visual_exercises')
+          .update({
+            title: formExercise.title,
+            image_url: imageUrl,
+            description: formExercise.description
+          })
+          .eq('id', exerciseId);
+
+        if (error) throw error;
+
+        // Process questions
+        console.log("Processing questions for exercise ID:", exerciseId);
+        
+        // Keep track of all question IDs to keep (existing and newly created)
+        const keepIds = [];
+        
+        // Update or create questions
+        for (const question of formQuestions) {
+          if (!question.text.trim()) {
+            console.log("Skipping empty question");
+            continue;
           }
-          
-          console.log("Inserted question result:", insertData);
-          
-          // Add the newly created question ID to our keep list
-          if (insertData && insertData.length > 0) {
-            keepIds.push(insertData[0].id);
+
+          if (question.id && !question.isNew) {
+            // Update existing question
+            console.log("Updating existing question ID:", question.id);
+            const { error: updateError } = await supabase
+              .from('questions')
+              .update({
+                text: question.text,
+                ideal_answer: question.ideal_answer,
+                question_order: question.question_order,
+                marks: question.marks || 1
+              })
+              .eq('id', question.id);
+
+            if (updateError) {
+              console.error("Error updating question:", updateError);
+              throw updateError;
+            }
+            // Add this ID to our keep list
+            keepIds.push(question.id);
+          } else {
+            // Create new question
+            console.log("Creating new question for exercise ID:", exerciseId);
+            const newQuestion = {
+              exercise_id: exerciseId,
+              text: question.text,
+              ideal_answer: question.ideal_answer,
+              question_order: question.question_order,
+              marks: question.marks || 1
+            };
+            console.log("New question data:", newQuestion);
+            
+            const { data: insertData, error: insertError } = await supabase
+              .from('questions')
+              .insert(newQuestion)
+              .select();
+
+            if (insertError) {
+              console.error("Error inserting question:", insertError);
+              throw insertError;
+            }
+            
+            console.log("Inserted question result:", insertData);
+            
+            // Add the newly created question ID to our keep list
+            if (insertData && insertData.length > 0) {
+              keepIds.push(insertData[0].id);
+            }
           }
         }
-      }
 
-      // Get list of questions to potentially delete
-      const existingQuestions = await fetchQuestionsForExercise(exerciseId);
-      console.log("Existing questions:", existingQuestions);
-      console.log("Questions to keep IDs:", keepIds);
-      
-      // Delete questions that are no longer in the form
-      for (const question of existingQuestions) {
-        if (!keepIds.includes(question.id)) {
-          console.log("Deleting question ID:", question.id);
-          const { error: deleteError } = await supabase
-            .from('questions')
-            .delete()
-            .eq('id', question.id);
+        // Get list of questions to potentially delete
+        const existingQuestions = await fetchQuestionsForExercise(exerciseId);
+        console.log("Existing questions:", existingQuestions);
+        console.log("Questions to keep IDs:", keepIds);
+        
+        // Delete questions that are no longer in the form
+        for (const question of existingQuestions) {
+          if (!keepIds.includes(question.id)) {
+            console.log("Deleting question ID:", question.id);
+            const { error: deleteError } = await supabase
+              .from('questions')
+              .delete()
+              .eq('id', question.id);
 
-          if (deleteError) {
-            console.error("Error deleting question:", deleteError);
-            throw deleteError;
+            if (deleteError) {
+              console.error("Error deleting question:", deleteError);
+              throw deleteError;
+            }
           }
         }
-      }
 
-      setMessage({ text: "Saved successfully", type: "success" });
-      setIsEditing(false);
-      
-      // Refresh the questions for the expanded exercise
-      if (expandedExercise === exerciseId) {
-        const refreshedQuestions = await fetchQuestionsForExercise(exerciseId);
-        setQuestions(refreshedQuestions);
-      }
-      
-      // Refresh exercise list
-      const { data, error: refreshError } = await supabase
-        .from('visual_exercises')
-        .select('*')
-        .order('id');
+        setMessage({ text: "Saved successfully", type: "success" });
+        setIsEditing(false);
+        
+        // Refresh the questions for the expanded exercise
+        if (expandedExercise === exerciseId) {
+          const refreshedQuestions = await fetchQuestionsForExercise(exerciseId);
+          setQuestions(refreshedQuestions);
+        }
+        
+        // Refresh exercise list
+        const { data, error: refreshError } = await supabase
+          .from('visual_exercises')
+          .select('*')
+          .order('id');
 
-      if (refreshError) throw refreshError;
-      setExercises(data || []);
+        if (refreshError) throw refreshError;
+        setExercises(data || []);
+
+      }
 
     } catch (error) {
       console.error('Error saving data:', error);
@@ -554,34 +643,71 @@ export default function AdminPanel() {
     }
   }
 
+  // Create a new narrative exercise
+  const handleCreateNarrativeExercise = () => {
+    setSelectedNarrativeExercise(null);
+    setFormNarrativeExercise({
+      title: "New Narrative Exercise",
+      story_text: "",
+      description: "",
+      time_limit: 1800 // Default 30 minutes
+    });
+    
+    // Initialize with one empty question
+    setFormNarrativeQuestions([
+      {
+        id: Date.now(),
+        question_text: "",
+        ideal_answer: "",
+        question_order: 1,
+        marks: 1,
+        isNew: true
+      }
+    ]);
+    
+    setIsEditingNarrative(true);
+  };
+
   // Handle editing an existing narrative exercise
   const handleEditNarrativeExercise = (exercise: NarrativeExercise) => {
-    setSelectedNarrativeExercise(exercise)
-    
+    // Set form data for editing
     setFormNarrativeExercise({
       id: exercise.id,
       title: exercise.title,
       story_text: exercise.story_text,
       description: exercise.description || "",
-      time_limit: exercise.time_limit
+      time_limit: exercise.time_limit || 1800 // Default 30 minutes
     })
     
-    // Convert the JSONB questions array to our form format
-    const narrativeQuestions = exercise.questions || []
-    setFormNarrativeQuestions(narrativeQuestions.map(q => ({ ...q, isNew: false })))
+    // Format questions for form
+    const questionsForForm = exercise.questions.map(q => ({
+      id: q.id,
+      question_text: q.question_text,
+      ideal_answer: q.ideal_answer,
+      question_order: q.question_order,
+      marks: q.marks || 1,
+      isNew: false
+    }))
     
+    setFormNarrativeQuestions(questionsForForm)
+    setSelectedNarrativeExercise(exercise)
     setIsEditingNarrative(true)
   }
 
   // Handle adding a question to narrative exercise
   const handleAddNarrativeQuestion = () => {
+    const newOrder = formNarrativeQuestions.length > 0 
+      ? Math.max(...formNarrativeQuestions.map(q => q.question_order)) + 1 
+      : 1;
+    
     setFormNarrativeQuestions([
-      ...formNarrativeQuestions,
+      ...formNarrativeQuestions, 
       {
-        id: Math.max(0, ...formNarrativeQuestions.map(q => q.id)) + 1,
+        id: Date.now(), // Temporary ID for new questions
         question_text: "",
         ideal_answer: "",
-        question_order: formNarrativeQuestions.length + 1,
+        question_order: newOrder,
+        marks: 1,
         isNew: true
       }
     ])
@@ -611,71 +737,103 @@ export default function AdminPanel() {
 
   // Handle changes to narrative question form fields
   const handleNarrativeQuestionChange = (index: number, e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target
     const updatedQuestions = [...formNarrativeQuestions]
+    const field = e.target.name
+    const value = field === 'question_order' || field === 'marks' ? parseInt(e.target.value) || 0 : e.target.value
+    
     updatedQuestions[index] = {
       ...updatedQuestions[index],
-      [name]: value
+      [field]: value
     }
+    
     setFormNarrativeQuestions(updatedQuestions)
   }
 
   // Save narrative exercise and questions
   const handleSaveNarrative = async () => {
     try {
-      setIsUploading(true)
+      setIsUploading(true);
       
       // Validate form data
       if (!formNarrativeExercise.title.trim()) {
-        setMessage({ text: "Title is required", type: "error" })
-        return
+        setMessage({ text: "Title is required", type: "error" });
+        return;
       }
       
       if (!formNarrativeExercise.story_text.trim()) {
-        setMessage({ text: "Story text is required", type: "error" })
-        return
+        setMessage({ text: "Story text is required", type: "error" });
+        return;
       }
-      
+
       if (formNarrativeQuestions.length === 0) {
-        setMessage({ text: "At least one question is required", type: "error" })
-        return
+        setMessage({ text: "At least one question is required", type: "error" });
+        return;
       }
       
-      // Update existing exercise
-      const { error: updateError } = await supabase
-        .from('narrative_exercises')
-        .update({
-          title: formNarrativeExercise.title,
-          story_text: formNarrativeExercise.story_text,
-          description: formNarrativeExercise.description,
-          time_limit: formNarrativeExercise.time_limit,
-          questions: formNarrativeQuestions
-        })
-        .eq('id', formNarrativeExercise.id)
+      // Prepare questions with correct format
+      const questionsToSave = formNarrativeQuestions.map(q => ({
+        id: q.isNew ? undefined : q.id,
+        question_text: q.question_text,
+        ideal_answer: q.ideal_answer,
+        question_order: q.question_order,
+        marks: q.marks || 1
+      }));
       
-      if (updateError) throw updateError
+      const exerciseId = formNarrativeExercise.id;
       
-      setMessage({ text: "Exercise updated successfully", type: "success" })
+      if (!exerciseId) {
+        // Creating a new narrative exercise
+        const { data: newExercise, error: insertError } = await supabase
+          .from('narrative_exercises')
+          .insert({
+            title: formNarrativeExercise.title,
+            story_text: formNarrativeExercise.story_text,
+            description: formNarrativeExercise.description,
+            time_limit: formNarrativeExercise.time_limit,
+            questions: questionsToSave
+          })
+          .select('*')
+          .single();
+          
+        if (insertError) throw insertError;
+        
+        setMessage({ text: "New narrative exercise created successfully", type: "success" });
+      } else {
+        // Update existing exercise with questions
+        const { error } = await supabase
+          .from('narrative_exercises')
+          .update({
+            title: formNarrativeExercise.title,
+            story_text: formNarrativeExercise.story_text,
+            description: formNarrativeExercise.description,
+            time_limit: formNarrativeExercise.time_limit,
+            questions: questionsToSave
+          })
+          .eq('id', exerciseId);
+
+        if (error) throw error;
+        
+        setMessage({ text: "Narrative exercise updated successfully", type: "success" });
+      }
       
-      // Refresh narrative exercises list
-      const { data: refreshData, error: refreshError } = await supabase
+      setIsEditingNarrative(false);
+      
+      // Refresh exercise list
+      const { data, error: refreshError } = await supabase
         .from('narrative_exercises')
         .select('*')
-        .order('id')
-      
-      if (refreshError) throw refreshError
-      setNarrativeExercises(refreshData || [])
-      
-      // Reset form and close editing mode
-      setIsEditingNarrative(false)
-      
+        .order('id');
+
+      if (refreshError) throw refreshError;
+      setNarrativeExercises(data || []);
+
     } catch (error) {
-      console.error('Error saving narrative exercise:', error)
-      setMessage({ text: "Failed to save narrative exercise", type: "error" })
+      console.error('Error saving narrative exercise:', error);
+      setMessage({ text: "Failed to save narrative exercise", type: "error" });
     } finally {
-      setIsUploading(false)
+      setIsUploading(false);
     }
-  }
+  };
 
   // Preview the narrative exercise
   const handlePreviewNarrativeExercise = (exerciseId: number) => {
@@ -752,32 +910,43 @@ export default function AdminPanel() {
 
   // Handle editing an existing non-narrative exercise
   const handleEditNonNarrativeExercise = (exercise: NonNarrativeExercise) => {
-    setSelectedNonNarrativeExercise(exercise)
-    
+    // Set form data for editing
     setFormNonNarrativeExercise({
       id: exercise.id,
       title: exercise.title,
       passage_text: exercise.passage_text,
       description: exercise.description || "",
-      time_limit: exercise.time_limit
+      time_limit: exercise.time_limit || 1500 // Default 25 minutes
     })
     
-    // Convert the JSONB questions array to our form format
-    const nonNarrativeQuestions = exercise.questions || []
-    setFormNonNarrativeQuestions(nonNarrativeQuestions.map(q => ({ ...q, isNew: false })))
+    // Format questions for form
+    const questionsForForm = exercise.questions.map(q => ({
+      id: q.id,
+      question_text: q.question_text,
+      ideal_answer: q.ideal_answer,
+      question_order: q.question_order,
+      marks: q.marks || 1
+    }))
     
+    setFormNonNarrativeQuestions(questionsForForm)
+    setSelectedNonNarrativeExercise(exercise)
     setIsEditingNonNarrative(true)
   }
 
   // Handle adding a question to non-narrative exercise
   const handleAddNonNarrativeQuestion = () => {
+    const newOrder = formNonNarrativeQuestions.length > 0 
+      ? Math.max(...formNonNarrativeQuestions.map(q => q.question_order)) + 1 
+      : 1;
+    
     setFormNonNarrativeQuestions([
-      ...formNonNarrativeQuestions,
+      ...formNonNarrativeQuestions, 
       {
-        id: Math.max(0, ...formNonNarrativeQuestions.map(q => q.id)) + 1,
+        id: Date.now(), // Temporary ID for new questions
         question_text: "",
         ideal_answer: "",
-        question_order: formNonNarrativeQuestions.length + 1,
+        question_order: newOrder,
+        marks: 1,
         isNew: true
       }
     ])
@@ -807,90 +976,103 @@ export default function AdminPanel() {
 
   // Handle changes to non-narrative question form fields
   const handleNonNarrativeQuestionChange = (index: number, e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target
     const updatedQuestions = [...formNonNarrativeQuestions]
+    const field = e.target.name
+    const value = field === 'question_order' || field === 'marks' ? parseInt(e.target.value) || 0 : e.target.value
+    
     updatedQuestions[index] = {
       ...updatedQuestions[index],
-      [name]: value
+      [field]: value
     }
+    
     setFormNonNarrativeQuestions(updatedQuestions)
   }
 
   // Save non-narrative exercise and questions
   const handleSaveNonNarrative = async () => {
     try {
-      setIsUploading(true)
+      setIsUploading(true);
       
       // Validate form data
       if (!formNonNarrativeExercise.title.trim()) {
-        setMessage({ text: "Title is required", type: "error" })
-        return
+        setMessage({ text: "Title is required", type: "error" });
+        return;
       }
-      
+
       if (!formNonNarrativeExercise.passage_text.trim()) {
-        setMessage({ text: "Passage text is required", type: "error" })
-        return
+        setMessage({ text: "Passage text is required", type: "error" });
+        return;
       }
-      
+
       if (formNonNarrativeQuestions.length === 0) {
-        setMessage({ text: "At least one question is required", type: "error" })
-        return
+        setMessage({ text: "At least one question is required", type: "error" });
+        return;
       }
+
+      const exerciseId = formNonNarrativeExercise.id;
       
-      // Check if we're creating a new exercise or updating an existing one
-      if (formNonNarrativeExercise.id) {
-        // Update existing exercise
-        const { error: updateError } = await supabase
-          .from('non_narrative_exercises')
-          .update({
-            title: formNonNarrativeExercise.title,
-            passage_text: formNonNarrativeExercise.passage_text,
-            description: formNonNarrativeExercise.description,
-            time_limit: formNonNarrativeExercise.time_limit,
-            questions: formNonNarrativeQuestions
-          })
-          .eq('id', formNonNarrativeExercise.id)
-        
-        if (updateError) throw updateError
-        
-        setMessage({ text: "Exercise updated successfully", type: "success" })
-      } else {
-        // Create new exercise
-        const { data: newExercise, error: createError } = await supabase
+      // Prepare questions with correct format
+      const questionsToSave = formNonNarrativeQuestions.map(q => ({
+        id: q.isNew ? undefined : q.id,
+        question_text: q.question_text,
+        ideal_answer: q.ideal_answer,
+        question_order: q.question_order,
+        marks: q.marks || 1
+      }));
+
+      if (!exerciseId) {
+        // Creating a new exercise
+        const { data: newExercise, error: insertError } = await supabase
           .from('non_narrative_exercises')
           .insert({
             title: formNonNarrativeExercise.title,
             passage_text: formNonNarrativeExercise.passage_text,
             description: formNonNarrativeExercise.description,
             time_limit: formNonNarrativeExercise.time_limit,
-            questions: formNonNarrativeQuestions
+            questions: questionsToSave
           })
-          .select()
+          .select('*')
+          .single();
+          
+        if (insertError) throw insertError;
         
-        if (createError) throw createError
+        setMessage({ text: "New non-narrative exercise created successfully", type: "success" });
+      } else {
+        // Update existing exercise with questions
+        const { error } = await supabase
+          .from('non_narrative_exercises')
+          .update({
+            title: formNonNarrativeExercise.title,
+            passage_text: formNonNarrativeExercise.passage_text,
+            description: formNonNarrativeExercise.description,
+            time_limit: formNonNarrativeExercise.time_limit,
+            questions: questionsToSave
+          })
+          .eq('id', exerciseId);
+
+        if (error) throw error;
         
-        setMessage({ text: "New exercise created successfully", type: "success" })
+        setMessage({ text: "Non-narrative exercise updated successfully", type: "success" });
       }
+
+      setIsEditingNonNarrative(false);
       
-      // Refresh non-narrative exercises list
-      const { data: refreshData, error: refreshError } = await supabase
+      // Refresh exercise list
+      const { data, error: refreshError } = await supabase
         .from('non_narrative_exercises')
         .select('*')
-        .order('id')
-      
-      if (refreshError) throw refreshError
-      setNonNarrativeExercises(refreshData || [])
-      
-      // Reset form and close editing mode
-      setIsEditingNonNarrative(false)
-      
+        .order('id');
+
+      if (refreshError) throw refreshError;
+      setNonNarrativeExercises(data || []);
+
     } catch (error) {
-      console.error('Error saving non-narrative exercise:', error)
-      setMessage({ text: "Failed to save non-narrative exercise", type: "error" })
+      console.error('Error saving non-narrative exercise:', error);
+      setMessage({ text: "Failed to save non-narrative exercise", type: "error" });
     } finally {
-      setIsUploading(false)
+      setIsUploading(false);
     }
-  }
+  };
 
   // Preview the non-narrative exercise
   const handlePreviewNonNarrativeExercise = (exerciseId: number) => {
@@ -1104,17 +1286,32 @@ export default function AdminPanel() {
                   
                   <div className="space-y-6">
                     {formQuestions.map((question, index) => (
-                      <div key={index} className="bg-gray-50 p-4 rounded-md relative">
-                        <div className="absolute top-2 right-2">
-                          <button 
-                            onClick={() => handleRemoveQuestion(index)}
-                            className="text-red-500 hover:text-red-700"
-                          >
-                            <Trash2 size={18} />
-                          </button>
+                      <div key={index} className="p-6 bg-gray-50 rounded-lg mb-4">
+                        <div className="flex justify-between items-center mb-4">
+                          <h3 className="text-lg font-semibold text-gray-700">Question {index + 1}</h3>
+                          <div className="flex gap-2">
+                            
+                            <div className="flex items-center">
+                              <label className="text-sm text-gray-600 mr-2">Marks:</label>
+                              <input
+                                type="number"
+                                name="marks"
+                                value={question.marks || 1}
+                                onChange={(e) => handleQuestionChange(index, e)}
+                                className="border p-2 w-16 text-gray-900 text-center rounded"
+                                min="1"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveQuestion(index)}
+                              className="text-red-600 hover:text-red-800"
+                            >
+                              Remove
+                            </button>
+                          </div>
                         </div>
-                        
-                        <div className="mb-4">
+                        <div>
                           <label htmlFor={`question-${index}`} className="block text-sm font-medium text-gray-700">
                             Question {index + 1}
                           </label>
@@ -1128,7 +1325,6 @@ export default function AdminPanel() {
                             placeholder="Question text"
                           />
                         </div>
-                        
                         <div>
                           <label htmlFor={`answer-${index}`} className="block text-sm font-medium text-gray-700">
                             Ideal Answer
@@ -1188,6 +1384,15 @@ export default function AdminPanel() {
                 </div>
               ) : (
                 <div className="bg-white shadow rounded-lg overflow-hidden">
+                  <div className="p-4 bg-gray-50 border-b flex justify-end">
+                    <button
+                      onClick={handleCreateExercise}
+                      className="bg-blue-600 text-white py-2 px-4 rounded-md shadow-sm text-sm font-medium hover:bg-blue-700 flex items-center"
+                    >
+                      <Plus size={16} className="mr-2" />
+                      Create New Exercise
+                    </button>
+                  </div>
                   <ul className="divide-y divide-gray-200">
                     {exercises.map((exercise) => (
                       <li key={exercise.id} className="p-4">
@@ -1337,17 +1542,32 @@ export default function AdminPanel() {
                   
                   <div className="space-y-6">
                     {formNarrativeQuestions.map((question, index) => (
-                      <div key={index} className="bg-gray-50 p-4 rounded-md relative">
-                        <div className="absolute top-2 right-2">
-                          <button 
-                            onClick={() => handleRemoveNarrativeQuestion(index)}
-                            className="text-red-500 hover:text-red-700"
-                          >
-                            <Trash2 size={18} />
-                          </button>
+                      <div key={index} className="p-6 bg-gray-50 rounded-lg mb-4">
+                        <div className="flex justify-between items-center mb-4">
+                          <h3 className="text-lg font-semibold text-gray-700">Question {index + 1}</h3>
+                          <div className="flex gap-2">
+                            
+                            <div className="flex items-center">
+                              <label className="text-sm text-gray-600 mr-2">Marks:</label>
+                              <input
+                                type="number"
+                                name="marks"
+                                value={question.marks || 1}
+                                onChange={(e) => handleNarrativeQuestionChange(index, e)}
+                                className="border p-2 w-16 text-gray-900 text-center rounded"
+                                min="1"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveNarrativeQuestion(index)}
+                              className="text-red-600 hover:text-red-800"
+                            >
+                              Remove
+                            </button>
+                          </div>
                         </div>
-                        
-                        <div className="mb-4">
+                        <div>
                           <label htmlFor={`question-text-${index}`} className="block text-sm font-medium text-gray-700">
                             Question {index + 1}
                           </label>
@@ -1361,7 +1581,6 @@ export default function AdminPanel() {
                             placeholder="Question text"
                           />
                         </div>
-                        
                         <div>
                           <label htmlFor={`ideal-answer-${index}`} className="block text-sm font-medium text-gray-700">
                             Ideal Answer
@@ -1423,6 +1642,15 @@ export default function AdminPanel() {
                     </div>
                   ) : (
                     <div className="bg-white shadow rounded-lg overflow-hidden">
+                      <div className="p-4 bg-gray-50 border-b flex justify-end">
+                        <button
+                          onClick={handleCreateNarrativeExercise}
+                          className="bg-blue-600 text-white py-2 px-4 rounded-md shadow-sm text-sm font-medium hover:bg-blue-700 flex items-center"
+                        >
+                          <Plus size={16} className="mr-2" />
+                          Create New Exercise
+                        </button>
+                      </div>
                       <ul className="divide-y divide-gray-200">
                         {narrativeExercises.map((exercise) => (
                           <li key={exercise.id} className="px-4 py-4">
@@ -1583,43 +1811,57 @@ export default function AdminPanel() {
                   
                   <div className="space-y-6">
                     {formNonNarrativeQuestions.map((question, index) => (
-                      <div key={index} className="bg-gray-50 p-4 rounded-md relative">
-                        <div className="absolute top-2 right-2">
-                          <button 
-                            onClick={() => handleRemoveNonNarrativeQuestion(index)}
-                            className="text-red-500 hover:text-red-700"
-                          >
-                            <Trash2 size={18} />
-                          </button>
+                      <div key={index} className="p-6 bg-gray-50 rounded-lg mb-4">
+                        <div className="flex justify-between items-center mb-4">
+                          <h3 className="text-lg font-semibold text-gray-700">Question {index + 1}</h3>
+                          <div className="flex gap-2">
+                            
+                            <div className="flex items-center">
+                              <label className="text-sm text-gray-600 mr-2">Marks:</label>
+                              <input
+                                type="number"
+                                name="marks"
+                                value={question.marks || 1}
+                                onChange={(e) => handleNonNarrativeQuestionChange(index, e)}
+                                className="border p-2 w-16 text-gray-900 text-center rounded"
+                                min="1"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveNonNarrativeQuestion(index)}
+                              className="text-red-600 hover:text-red-800"
+                            >
+                              Remove
+                            </button>
+                          </div>
                         </div>
-                        
-                        <div className="mb-4">
+                        <div>
                           <label htmlFor={`question-text-${index}`} className="block text-sm font-medium text-gray-700">
-                            Question {index + 1}
+                            Question Text
                           </label>
-                          <input
-                            type="text"
-                            name="question_text"
+                          <textarea
                             id={`question-text-${index}`}
+                            name="question_text"
                             value={question.question_text}
                             onChange={(e) => handleNonNarrativeQuestionChange(index, e)}
-                            className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                            placeholder="Question text"
+                            rows={3}
+                            className="mt-1 w-full rounded-md text-gray-900 border border-gray-300 p-2 focus:border-blue-500 focus:ring-blue-500"
+                            placeholder="Enter the question text"
                           />
                         </div>
-                        
-                        <div>
+                        <div className="mt-4">
                           <label htmlFor={`ideal-answer-${index}`} className="block text-sm font-medium text-gray-700">
                             Ideal Answer
                           </label>
                           <textarea
-                            name="ideal_answer"
                             id={`ideal-answer-${index}`}
-                            rows={3}
+                            name="ideal_answer"
                             value={question.ideal_answer}
                             onChange={(e) => handleNonNarrativeQuestionChange(index, e)}
-                            className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                            placeholder="Ideal answer"
+                            rows={4}
+                            className="mt-1 w-full rounded-md text-gray-900 border border-gray-300 p-2 focus:border-blue-500 focus:ring-blue-500"
+                            placeholder="Enter the ideal answer"
                           />
                         </div>
                       </div>
@@ -1669,6 +1911,15 @@ export default function AdminPanel() {
                     </div>
                   ) : (
                     <div className="bg-white shadow rounded-lg overflow-hidden">
+                      <div className="p-4 bg-gray-50 border-b flex justify-end">
+                        <button
+                          onClick={handleCreateNonNarrativeExercise}
+                          className="bg-blue-600 text-white py-2 px-4 rounded-md shadow-sm text-sm font-medium hover:bg-blue-700 flex items-center"
+                        >
+                          <Plus size={16} className="mr-2" />
+                          Create New Exercise
+                        </button>
+                      </div>
                       <ul className="divide-y divide-gray-200">
                         {nonNarrativeExercises.map((exercise) => (
                           <li key={exercise.id} className="px-4 py-4">

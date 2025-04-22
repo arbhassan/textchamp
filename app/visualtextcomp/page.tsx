@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Search, HelpCircle, X, Home, Save } from "lucide-react"
+import { Search, HelpCircle, X, Home, Save, ArrowRight } from "lucide-react"
 import { evaluateAnswers } from "../api/evaluate-answers/utils"
 import { QuestionWithAnswer } from "../api/evaluate-answers/types"
 import ReactMarkdown from 'react-markdown'
@@ -25,6 +25,33 @@ export default function SectionA() {
   const [questions, setQuestions] = useState<Record<number, Question>>({})
   const [loading, setLoading] = useState(true)
   
+  // New state variables for handling multiple exercises
+  const [allExercises, setAllExercises] = useState<VisualExercise[]>([])
+  const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0)
+  const [exerciseChanged, setExerciseChanged] = useState(false)
+  
+  // Fetch all available exercises on initial load
+  useEffect(() => {
+    async function fetchAllExercises() {
+      try {
+        const { data, error } = await supabase
+          .from('visual_exercises')
+          .select('*')
+          .order('id')
+        
+        if (error) throw error
+        
+        if (data && data.length > 0) {
+          setAllExercises(data)
+        }
+      } catch (error) {
+        console.error('Error fetching all exercises:', error)
+      }
+    }
+    
+    fetchAllExercises()
+  }, [])
+  
   // Fetch exercise and questions data from Supabase
   useEffect(() => {
     async function fetchExerciseData() {
@@ -40,10 +67,21 @@ export default function SectionA() {
           .from('visual_exercises')
           .select('*')
         
-        // If we have a specific exercise ID, use it; otherwise get the first one with the title
+        // If we have a specific exercise ID, use it
         if (exerciseId) {
           exerciseQuery = exerciseQuery.eq('id', exerciseId)
+          // Find the index of this exercise in allExercises
+          if (allExercises.length > 0) {
+            const index = allExercises.findIndex(ex => ex.id.toString() === exerciseId)
+            if (index !== -1) {
+              setCurrentExerciseIndex(index)
+            }
+          }
+        } else if (allExercises.length > 0) {
+          // If no specific ID is provided, get the first exercise
+          exerciseQuery = exerciseQuery.eq('id', allExercises[0].id)
         } else {
+          // Fallback to the exercise with the title
           exerciseQuery = exerciseQuery.eq('title', 'Visual Text Comprehension')
         }
         
@@ -77,6 +115,7 @@ export default function SectionA() {
         }, {})
         
         setAnswers(initialAnswers)
+        setExerciseChanged(false)
         
       } catch (error) {
         console.error('Error fetching exercise data:', error)
@@ -85,8 +124,10 @@ export default function SectionA() {
       }
     }
     
-    fetchExerciseData()
-  }, [])
+    if (allExercises.length > 0 || exerciseChanged) {
+      fetchExerciseData()
+    }
+  }, [allExercises, exerciseChanged])
   
   // Load saved progress when component mounts
   useEffect(() => {
@@ -331,6 +372,27 @@ export default function SectionA() {
     return feedbackString;
   };
 
+  // Function to navigate to next exercise
+  const handleNextExercise = () => {
+    if (currentExerciseIndex < allExercises.length - 1) {
+      const nextIndex = currentExerciseIndex + 1
+      setCurrentExerciseIndex(nextIndex)
+      
+      // Update URL without refreshing the page
+      const nextExerciseId = allExercises[nextIndex].id
+      const url = new URL(window.location.href)
+      url.searchParams.set('exercise', nextExerciseId.toString())
+      window.history.pushState({}, '', url.toString())
+      
+      // Reset states for the new exercise
+      setAnswers({})
+      setFeedback("")
+      setScore(null)
+      setShowFeedback(false)
+      setExerciseChanged(true)
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#f5f9ff] flex items-center justify-center">
@@ -429,6 +491,9 @@ export default function SectionA() {
                     {index + 1}
                   </div>
                   <h2 className="text-lg font-medium text-gray-800">{question.text}</h2>
+                  <div className="ml-2 text-sm text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded-md">
+                    {question.marks || 1} {(question.marks || 1) === 1 ? 'mark' : 'marks'}
+                  </div>
                   <button className="text-gray-400 hover:text-gray-600 transition-colors ml-auto">
                     <HelpCircle className="w-5 h-5" />
                   </button>
@@ -525,26 +590,37 @@ export default function SectionA() {
         {/* Navigation */}
         <div className="mt-12 flex justify-between">
           <div></div> {/* Empty div for flex justification */}
-          <button
-            onClick={handleSubmit}
-            disabled={isSubmitting}
-            className={`flex items-center gap-2 ${
-              isSubmitting ? 'bg-gray-400' : 'bg-orange-500 hover:bg-orange-600'
-            } text-white px-6 py-3 rounded-full shadow-sm transition-colors font-medium`}
-          >
-            {isSubmitting ? 'Submitting...' : 'Submit Test'}
-            {!isSubmitting && (
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path
-                  d="M5 12H19M19 12L12 5M19 12L12 19"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+          <div className="flex gap-4">
+            {currentExerciseIndex < allExercises.length - 1 && (
+              <button
+                onClick={handleNextExercise}
+                className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-full shadow-sm transition-colors font-medium"
+              >
+                <span>Next Exercise</span>
+                <ArrowRight size={20} />
+              </button>
             )}
-          </button>
+            <button
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className={`flex items-center gap-2 ${
+                isSubmitting ? 'bg-gray-400' : 'bg-orange-500 hover:bg-orange-600'
+              } text-white px-6 py-3 rounded-full shadow-sm transition-colors font-medium`}
+            >
+              {isSubmitting ? 'Submitting...' : 'Submit Test'}
+              {!isSubmitting && (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path
+                    d="M5 12H19M19 12L12 5M19 12L12 19"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              )}
+            </button>
+          </div>
         </div>
       </main>
     </div>

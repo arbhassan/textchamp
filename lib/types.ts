@@ -11,6 +11,7 @@ export interface Question {
   text: string;
   ideal_answer: string;
   question_order: number;
+  marks?: number;
 }
 
 export interface NarrativeExercise {
@@ -27,4 +28,22 @@ export interface NarrativeQuestion {
   question_text: string;
   ideal_answer: string;
   question_order: number;
+  marks?: number;
+}
+
+export interface NonNarrativeExercise {
+  id: number;
+  title: string;
+  passage_text: string;
+  description?: string;
+  time_limit: number;
+  questions: NonNarrativeQuestion[];
+}
+
+export interface NonNarrativeQuestion {
+  id: number;
+  question_text: string;
+  ideal_answer: string;
+  question_order: number;
+  marks?: number;
 } 

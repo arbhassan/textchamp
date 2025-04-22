@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { HelpCircle, X, Home, Save } from "lucide-react"
+import { HelpCircle, X, Home, Save, ArrowRight } from "lucide-react"
 import { evaluateAnswers } from "../api/evaluate-answers/utils"
 import { QuestionWithAnswer } from "../api/evaluate-answers/types"
 import ReactMarkdown from 'react-markdown'
@@ -24,12 +24,13 @@ interface Question {
   question_text: string
   ideal_answer: string
   question_order: number
+  marks?: number
 }
 
 export default function SectionC() {
   const router = useRouter()
   const [wordCount, setWordCount] = useState(0)
-  const [answers, setAnswers] = useState<Record<number, string>>({})
+  const [answers, setAnswers] = useState<Record<number | string, string>>({})
   const [feedback, setFeedback] = useState("")
   const [score, setScore] = useState(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -39,6 +40,33 @@ export default function SectionC() {
   const [exercise, setExercise] = useState<NonNarrativeExercise | null>(null)
   const [questions, setQuestions] = useState<Question[]>([])
   const [loading, setLoading] = useState(true)
+  
+  // New state variables for handling multiple exercises
+  const [allExercises, setAllExercises] = useState<NonNarrativeExercise[]>([])
+  const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0)
+  const [exerciseChanged, setExerciseChanged] = useState(false)
+  
+  // Fetch all available exercises on initial load
+  useEffect(() => {
+    async function fetchAllExercises() {
+      try {
+        const { data, error } = await supabase
+          .from('non_narrative_exercises')
+          .select('*')
+          .order('id')
+        
+        if (error) throw error
+        
+        if (data && data.length > 0) {
+          setAllExercises(data)
+        }
+      } catch (error) {
+        console.error('Error fetching all exercises:', error)
+      }
+    }
+    
+    fetchAllExercises()
+  }, [])
   
   // Fetch exercise and questions data from Supabase
   useEffect(() => {
@@ -55,11 +83,21 @@ export default function SectionC() {
           .from('non_narrative_exercises')
           .select('*')
         
-        // If we have a specific exercise ID, use it; otherwise get a random one
+        // If we have a specific exercise ID, use it
         if (exerciseId) {
           exerciseQuery = exerciseQuery.eq('id', exerciseId)
-        } else {
+          // Find the index of this exercise in allExercises
+          if (allExercises.length > 0) {
+            const index = allExercises.findIndex(ex => ex.id.toString() === exerciseId)
+            if (index !== -1) {
+              setCurrentExerciseIndex(index)
+            }
+          }
+        } else if (allExercises.length > 0) {
           // If no specific ID is provided, get the first exercise
+          exerciseQuery = exerciseQuery.eq('id', allExercises[0].id)
+        } else {
+          // Fallback to getting the first exercise
           exerciseQuery = exerciseQuery.order('id', { ascending: true }).limit(1)
         }
         
@@ -85,11 +123,17 @@ export default function SectionC() {
         })
         
         // Initialize empty answers for each question
-        const initialAnswers: Record<number, string> = {}
+        const initialAnswers: Record<number | string, string> = {}
         sortedQuestions.forEach(q => {
-          initialAnswers[q.id] = ""
+          initialAnswers[q.id || `question-${q.question_order}`] = ""
         })
         setAnswers(initialAnswers)
+        setExerciseChanged(false)
+        
+        // Reset word count
+        if (sortedQuestions.find(q => q.question_order === 2)) {
+          setWordCount(0)
+        }
         
         // Check if we're resuming a saved session
         const isResuming = searchParams.get('resume') === 'true'
@@ -139,8 +183,10 @@ export default function SectionC() {
       }
     }
     
-    fetchExerciseData()
-  }, [router])
+    if (allExercises.length > 0 || exerciseChanged) {
+      fetchExerciseData()
+    }
+  }, [allExercises, exerciseChanged])
   
   // Start the timer countdown
   useEffect(() => {
@@ -239,7 +285,7 @@ export default function SectionC() {
     
     // If this is the summary question (question_order === 2), update word count
     const summaryQuestion = questions.find(q => q.question_order === 2)
-    if (summaryQuestion && questionId === summaryQuestion.id) {
+    if (summaryQuestion && (questionId === summaryQuestion.id || questionId === `question-${summaryQuestion.question_order}`)) {
       const words = value.trim().split(/\s+/).filter(Boolean).length
       setWordCount(words)
     }
@@ -253,7 +299,7 @@ export default function SectionC() {
       const questionsWithAnswers: QuestionWithAnswer[] = questions.map(question => ({
         question: question.question_text,
         idealAnswer: question.ideal_answer,
-        userAnswer: answers[question.id] || ""
+        userAnswer: answers[question.id || `question-${question.question_order}`] || ""
       }))
 
       const result = await evaluateAnswers(exercise.passage_text, questionsWithAnswers)
@@ -343,6 +389,28 @@ export default function SectionC() {
     
     // Return the markdown content directly - we'll use ReactMarkdown to render it
     return feedbackString
+  }
+
+  // Function to navigate to next exercise
+  const handleNextExercise = () => {
+    if (currentExerciseIndex < allExercises.length - 1) {
+      const nextIndex = currentExerciseIndex + 1
+      setCurrentExerciseIndex(nextIndex)
+      
+      // Update URL without refreshing the page
+      const nextExerciseId = allExercises[nextIndex].id
+      const url = new URL(window.location.href)
+      url.searchParams.set('exercise', nextExerciseId.toString())
+      window.history.pushState({}, '', url.toString())
+      
+      // Reset states for the new exercise
+      setAnswers({})
+      setFeedback("")
+      setScore(null)
+      setShowFeedback(false)
+      setWordCount(0)
+      setExerciseChanged(true)
+    }
   }
 
   if (loading) {
@@ -444,12 +512,15 @@ export default function SectionC() {
               if (isAnalysis) title = "Critical Analysis"
               
               return (
-                <div key={question.id} className="bg-white rounded-2xl shadow-sm p-6">
+                <div key={question.id || `question-${question.question_order}`} className="bg-white rounded-2xl shadow-sm p-6">
                   <div className="flex items-center gap-4 mb-4">
                     <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium">
                       {question.question_order}
                     </div>
                     <h2 className="text-lg font-medium text-gray-800">{title}</h2>
+                    <div className="ml-2 text-sm text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded-md">
+                      {question.marks || 1} {(question.marks || 1) === 1 ? 'mark' : 'marks'}
+                    </div>
                     <button className="text-gray-400 hover:text-gray-600 transition-colors ml-auto">
                       <HelpCircle className="w-5 h-5" />
                     </button>
@@ -461,8 +532,8 @@ export default function SectionC() {
                     <textarea
                       className="w-full h-24 p-4 border border-gray-200 text-gray-700 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       placeholder={isSummary ? "Write your summary here..." : "Type your answer here..."}
-                      value={answers[question.id] || ""}
-                      onChange={(e) => handleAnswerChange(question.id, e.target.value)}
+                      value={answers[question.id || `question-${question.question_order}`] || ""}
+                      onChange={(e) => handleAnswerChange(question.id || `question-${question.question_order}`, e.target.value)}
                     />
                     {isSummary && (
                       <div className="mt-2 text-sm text-gray-500 flex justify-between">
@@ -557,26 +628,37 @@ export default function SectionC() {
 
         {/* Navigation */}
         <div className="mt-12 flex justify-end">
-          <button 
-            onClick={handleSubmit}
-            disabled={isSubmitting}
-            className={`flex items-center gap-2 ${
-              isSubmitting ? 'bg-gray-400' : 'bg-orange-500 hover:bg-orange-600'
-            } text-white px-6 py-3 rounded-full shadow-sm transition-colors font-medium`}
-          >
-            {isSubmitting ? 'Submitting...' : 'Submit Test'}
-            {!isSubmitting && (
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path
-                  d="M5 12H19M19 12L12 5M19 12L12 19"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+          <div className="flex gap-4">
+            {currentExerciseIndex < allExercises.length - 1 && (
+              <button
+                onClick={handleNextExercise}
+                className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-full shadow-sm transition-colors font-medium"
+              >
+                <span>Next Exercise</span>
+                <ArrowRight size={20} />
+              </button>
             )}
-          </button>
+            <button 
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className={`flex items-center gap-2 ${
+                isSubmitting ? 'bg-gray-400' : 'bg-orange-500 hover:bg-orange-600'
+              } text-white px-6 py-3 rounded-full shadow-sm transition-colors font-medium`}
+            >
+              {isSubmitting ? 'Submitting...' : 'Submit Test'}
+              {!isSubmitting && (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path
+                    d="M5 12H19M19 12L12 5M19 12L12 19"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              )}
+            </button>
+          </div>
         </div>
       </main>
     </div>

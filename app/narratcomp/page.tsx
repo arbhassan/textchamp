@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { HelpCircle, X, Home, Save } from "lucide-react"
+import { HelpCircle, X, Home, Save, ArrowRight } from "lucide-react"
 import { evaluateAnswers } from "../api/evaluate-answers/utils"
 import { QuestionWithAnswer } from "../api/evaluate-answers/types"
 import ReactMarkdown from 'react-markdown'
@@ -24,6 +24,7 @@ interface Question {
   question_text: string
   ideal_answer: string
   question_order: number
+  marks?: number
 }
 
 export default function SectionB() {
@@ -41,6 +42,33 @@ export default function SectionB() {
   const [loading, setLoading] = useState(true)
   const [totalQuestions, setTotalQuestions] = useState(0)
   
+  // New state variables for handling multiple exercises
+  const [allExercises, setAllExercises] = useState<NarrativeExercise[]>([])
+  const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0)
+  const [exerciseChanged, setExerciseChanged] = useState(false)
+  
+  // Fetch all available exercises on initial load
+  useEffect(() => {
+    async function fetchAllExercises() {
+      try {
+        const { data, error } = await supabase
+          .from('narrative_exercises')
+          .select('*')
+          .order('id')
+        
+        if (error) throw error
+        
+        if (data && data.length > 0) {
+          setAllExercises(data)
+        }
+      } catch (error) {
+        console.error('Error fetching all exercises:', error)
+      }
+    }
+    
+    fetchAllExercises()
+  }, [])
+  
   // Fetch exercise and questions data from Supabase
   useEffect(() => {
     async function fetchExerciseData() {
@@ -56,7 +84,20 @@ export default function SectionB() {
           .from('narrative_exercises')
           .select('*')
         
-        
+        // If we have a specific exercise ID, use it
+        if (exerciseId) {
+          exerciseQuery = exerciseQuery.eq('id', exerciseId)
+          // Find the index of this exercise in allExercises
+          if (allExercises.length > 0) {
+            const index = allExercises.findIndex(ex => ex.id.toString() === exerciseId)
+            if (index !== -1) {
+              setCurrentExerciseIndex(index)
+            }
+          }
+        } else if (allExercises.length > 0) {
+          // If no specific ID is provided, get the first exercise
+          exerciseQuery = exerciseQuery.eq('id', allExercises[0].id)
+        }
         
         const { data: exerciseData, error: exerciseError } = await exerciseQuery.single()
         
@@ -77,7 +118,12 @@ export default function SectionB() {
         
         // Convert array to record object with question id as key
         const questionRecord = questionsData.reduce((acc, question) => {
-          acc[question.id] = question
+          // Make sure each question has an id property
+          const questionId = question.id || questionsData.indexOf(question) + 1;
+          acc[questionId] = {
+            ...question,
+            id: questionId, // Ensure the id property exists
+          };
           return acc
         }, {})
         
@@ -85,12 +131,14 @@ export default function SectionB() {
         
         // Initialize answers state with empty strings for each question
         const initialAnswers = questionsData.reduce((acc, question) => {
-          acc[question.id] = ""
+          const questionId = question.id || questionsData.indexOf(question) + 1;
+          acc[questionId] = ""
           return acc
         }, {})
         
         setAnswers(initialAnswers)
         setTotalQuestions(questionsData.length)
+        setExerciseChanged(false)
         
       } catch (error) {
         console.error('Error fetching exercise data:', error)
@@ -99,8 +147,10 @@ export default function SectionB() {
       }
     }
     
-    fetchExerciseData()
-  }, [])
+    if (allExercises.length > 0 || exerciseChanged) {
+      fetchExerciseData()
+    }
+  }, [allExercises, exerciseChanged])
   
   // Load saved progress when component mounts
   useEffect(() => {
@@ -346,6 +396,27 @@ export default function SectionB() {
     return feedbackString;
   };
   
+  // Function to navigate to next exercise
+  const handleNextExercise = () => {
+    if (currentExerciseIndex < allExercises.length - 1) {
+      const nextIndex = currentExerciseIndex + 1
+      setCurrentExerciseIndex(nextIndex)
+      
+      // Update URL without refreshing the page
+      const nextExerciseId = allExercises[nextIndex].id
+      const url = new URL(window.location.href)
+      url.searchParams.set('exercise', nextExerciseId.toString())
+      window.history.pushState({}, '', url.toString())
+      
+      // Reset states for the new exercise
+      setAnswers({})
+      setFeedback("")
+      setScore(null)
+      setShowFeedback(false)
+      setExerciseChanged(true)
+    }
+  }
+  
   // If still loading, show a loading indicator
   if (loading) {
     return (
@@ -373,8 +444,10 @@ export default function SectionB() {
     );
   }
   
-  // Extract question IDs for rendering
-  const questionIds = Object.keys(questions).map(id => parseInt(id));
+  // Extract question IDs for rendering and filter out any that don't exist in questions
+  const questionIds = Object.keys(questions)
+    .map(id => parseInt(id))
+    .filter(id => questions[id]);
   
   return (
     <div className="min-h-screen bg-[#f5f9ff]">
@@ -438,20 +511,25 @@ export default function SectionB() {
               <div key={questionId} className="bg-white rounded-2xl shadow-sm p-6">
                 <div className="flex items-center gap-4 mb-4">
                   <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium">
-                    {questions[questionId].question_order || questionId}
+                    {questions[questionId] && (questions[questionId].question_order || questionId)}
                   </div>
-                  <h2 className="text-lg font-medium text-gray-800">{questions[questionId].question_text}</h2>
+                  <h2 className="text-lg font-medium text-gray-800">{questions[questionId] && questions[questionId].question_text}</h2>
+                  <div className="ml-2 text-sm text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded-md">
+                    {questions[questionId] && (questions[questionId].marks || 1)} {questions[questionId] && ((questions[questionId].marks || 1) === 1 ? 'mark' : 'marks')}
+                  </div>
                   <button className="text-gray-400 hover:text-gray-600 transition-colors ml-auto">
                     <HelpCircle className="w-5 h-5" />
                   </button>
                 </div>
                 <div>
-                  <textarea
-                    className="w-full h-24 p-4 border text-gray-700 border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Type your answer here..."
-                    value={answers[questionId] || ''}
-                    onChange={(e) => handleAnswerChange(questionId, e.target.value)}
-                  />
+                  {questions[questionId] && (
+                    <textarea
+                      className="w-full h-24 p-4 border text-gray-700 border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Type your answer here..."
+                      value={answers[questionId] || ''}
+                      onChange={(e) => handleAnswerChange(questionId, e.target.value)}
+                    />
+                  )}
                 </div>
               </div>
             ))}
@@ -460,24 +538,35 @@ export default function SectionB() {
 
         {/* Navigation */}
         <div className="mt-12 flex justify-end">
-          <button 
-            onClick={handleSubmit}
-            disabled={isSubmitting}
-            className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-full shadow-sm transition-colors font-medium disabled:bg-orange-300"
-          >
-            {isSubmitting ? "Submitting..." : "Submit Test"}
-            {!isSubmitting && (
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path
-                  d="M5 12H19M19 12L12 5M19 12L12 19"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+          <div className="flex gap-4">
+            {currentExerciseIndex < allExercises.length - 1 && (
+              <button
+                onClick={handleNextExercise}
+                className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-full shadow-sm transition-colors font-medium"
+              >
+                <span>Next Exercise</span>
+                <ArrowRight size={20} />
+              </button>
             )}
-          </button>
+            <button 
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-full shadow-sm transition-colors font-medium disabled:bg-orange-300"
+            >
+              {isSubmitting ? "Submitting..." : "Submit Test"}
+              {!isSubmitting && (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path
+                    d="M5 12H19M19 12L12 5M19 12L12 19"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              )}
+            </button>
+          </div>
         </div>
       </main>
       

@@ -26,6 +26,7 @@ interface NonNarrativeQuestion {
   ideal_answer: string
   question_order: number
   word_limit?: number
+  marks?: number
 }
 
 export default function FullComprehensionPractice() {
@@ -422,7 +423,8 @@ export default function FullComprehensionPractice() {
         acc[index + 1] = {
           id: index + 1,
           text: question.text,
-          answer: question.ideal_answer
+          answer: question.ideal_answer,
+          marks: question.marks || 1
         }
         return acc
       }, {})
@@ -433,17 +435,20 @@ export default function FullComprehensionPractice() {
       1: {
         id: 1,
         text: "What is the main message conveyed by the image?",
-        answer: "The main message is about environmental awareness and sustainability. The image likely depicts the impact of human actions on the environment and encourages viewers to take responsibility for environmental protection."
+        answer: "The main message is about environmental awareness and sustainability. The image likely depicts the impact of human actions on the environment and encourages viewers to take responsibility for environmental protection.",
+        marks: 1
       },
       2: {
         id: 2,
         text: "How does the visual element support the text?",
-        answer: "The visual elements likely illustrate the text by showing environmental concerns visually (such as pollution, deforestation, or conservation efforts), making the message more impactful and emotionally engaging than text alone."
+        answer: "The visual elements likely illustrate the text by showing environmental concerns visually (such as pollution, deforestation, or conservation efforts), making the message more impactful and emotionally engaging than text alone.",
+        marks: 2
       },
       3: {
         id: 3,
         text: "What is the target audience for this advertisement?",
-        answer: "The target audience appears to be environmentally conscious individuals or the general public. The advertisement aims to increase awareness about environmental issues and motivate action among a broad audience."
+        answer: "The target audience appears to be environmentally conscious individuals or the general public. The advertisement aims to increase awareness about environmental issues and motivate action among a broad audience.",
+        marks: 2
       }
     }
   }
@@ -456,7 +461,8 @@ export default function FullComprehensionPractice() {
         acc[index + 1] = {
           id: index + 1,
           text: question.question_text || question.text,
-          answer: question.ideal_answer || question.answer
+          answer: question.ideal_answer || question.answer,
+          marks: question.marks || 1
         }
         return acc
       }, {})
@@ -467,17 +473,20 @@ export default function FullComprehensionPractice() {
       1: {
         id: 1,
         text: "What is the main character's attitude toward the forest?",
-        answer: "Elara is curious and drawn to the forest, unlike the other villagers who fear it. She's adventurous and interested in its secrets."
+        answer: "Elara is curious and drawn to the forest, unlike the other villagers who fear it. She's adventurous and interested in its secrets.",
+        marks: 1
       },
       2: {
         id: 2,
         text: "What does the grandmother's warning suggest about the forest?",
-        answer: "The grandmother's warning suggests the forest is magical but potentially dangerous. It gives gifts that come with a price, indicating it has a dual nature of beauty and risk."
+        answer: "The grandmother's warning suggests the forest is magical but potentially dangerous. It gives gifts that come with a price, indicating it has a dual nature of beauty and risk.",
+        marks: 2
       },
       3: {
         id: 3,
         text: "What literary device is used in \"The Whispering Woods\"?",
-        answer: "Personification is used in 'The Whispering Woods' - the forest is given human-like qualities such as whispering and giving gifts."
+        answer: "Personification is used in 'The Whispering Woods' - the forest is given human-like qualities such as whispering and giving gifts.",
+        marks: 2
       }
     }
   }
@@ -490,7 +499,8 @@ export default function FullComprehensionPractice() {
         acc[index + 1] = {
           id: index + 1,
           text: question.question_text || question.text,
-          answer: question.ideal_answer || question.answer
+          answer: question.ideal_answer || question.answer,
+          marks: question.marks || 1
         }
         return acc
       }, {})
@@ -501,17 +511,20 @@ export default function FullComprehensionPractice() {
       1: {
         id: 1,
         text: "What is the central theme of the passage? Support your answer with evidence.",
-        answer: "The central theme is the rapid advancement of AI technology and its implications for society. Evidence includes the references to AI reshaping the world, becoming more sophisticated, and the ethical considerations it raises including privacy, accountability, and employment impacts."
+        answer: "The central theme is the rapid advancement of AI technology and its implications for society. Evidence includes the references to AI reshaping the world, becoming more sophisticated, and the ethical considerations it raises including privacy, accountability, and employment impacts.",
+        marks: 2
       },
       2: {
         id: 2,
         text: "Write a summary of the passage in no more than 80 words.",
-        answer: "AI technology is rapidly advancing and transforming various sectors. Recent breakthroughs in machine learning have enabled AI systems to process language and visual data with exceptional accuracy. However, this integration raises ethical concerns about privacy, accountability, and employment impacts. Experts emphasize the need for regulatory frameworks to maximize benefits while minimizing risks."
+        answer: "AI technology is rapidly advancing and transforming various sectors. Recent breakthroughs in machine learning have enabled AI systems to process language and visual data with exceptional accuracy. However, this integration raises ethical concerns about privacy, accountability, and employment impacts. Experts emphasize the need for regulatory frameworks to maximize benefits while minimizing risks.",
+        marks: 1
       },
       3: {
         id: 3,
         text: "What ethical concerns does the passage highlight about AI development?",
-        answer: "The passage highlights ethical concerns about privacy, accountability, and the potential impact on employment. It emphasizes the need for robust regulatory frameworks to ensure AI technologies benefit humanity while minimizing potential risks."
+        answer: "The passage highlights ethical concerns about privacy, accountability, and the potential impact on employment. It emphasizes the need for robust regulatory frameworks to ensure AI technologies benefit humanity while minimizing potential risks.",
+        marks: 2
       }
     }
   }
@@ -853,6 +866,9 @@ export default function FullComprehensionPractice() {
                             {question.id}
                           </div>
                           <h2 className="text-lg font-medium text-gray-800">{question.text}</h2>
+                          <div className="ml-2 text-sm text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded-md">
+                            {question.marks || 1} {(question.marks || 1) === 1 ? 'mark' : 'marks'}
+                          </div>
                           <button className="text-gray-400 hover:text-gray-600 transition-colors ml-auto">
                             <HelpCircle className="w-5 h-5" />
                           </button>
@@ -880,6 +896,9 @@ export default function FullComprehensionPractice() {
                             {question.id}
                           </div>
                           <h2 className="text-lg font-medium text-gray-800">{question.text}</h2>
+                          <div className="ml-2 text-sm text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded-md">
+                            {question.marks || 1} {(question.marks || 1) === 1 ? 'mark' : 'marks'}
+                          </div>
                           <button className="text-gray-400 hover:text-gray-600 transition-colors ml-auto">
                             <HelpCircle className="w-5 h-5" />
                           </button>
@@ -911,6 +930,9 @@ export default function FullComprehensionPractice() {
                              question.id === 2 ? "Summary Writing" : 
                              "Critical Analysis"}
                           </h2>
+                          <div className="ml-2 text-sm text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded-md">
+                            {question.marks || 1} {(question.marks || 1) === 1 ? 'mark' : 'marks'}
+                          </div>
                           <button className="text-gray-400 hover:text-gray-600 transition-colors ml-auto">
                             <HelpCircle className="w-5 h-5" />
                           </button>
