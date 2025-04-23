@@ -77,6 +77,21 @@ export default function FullComprehensionPractice() {
   const [narrativeExercise, setNarrativeExercise] = useState<NarrativeExercise | null>(null)
   const [nonNarrativeExercise, setNonNarrativeExercise] = useState<NonNarrativeExercise | null>(null)
   
+  // New state for multiple exercises
+  const [allVisualExercises, setAllVisualExercises] = useState<VisualExercise[]>([])
+  const [allNarrativeExercises, setAllNarrativeExercises] = useState<NarrativeExercise[]>([])
+  const [allNonNarrativeExercises, setAllNonNarrativeExercises] = useState<NonNarrativeExercise[]>([])
+  
+  // Current exercise indices
+  const [currentVisualExerciseIndex, setCurrentVisualExerciseIndex] = useState(0)
+  const [currentNarrativeExerciseIndex, setCurrentNarrativeExerciseIndex] = useState(0)
+  const [currentNonNarrativeExerciseIndex, setCurrentNonNarrativeExerciseIndex] = useState(0)
+  
+  // Exercise changed flags to trigger reloading
+  const [exerciseAChanged, setExerciseAChanged] = useState(false)
+  const [exerciseBChanged, setExerciseBChanged] = useState(false)
+  const [exerciseCChanged, setExerciseCChanged] = useState(false)
+  
   // Load saved progress when component mounts
   useEffect(() => {
     // Check if we're resuming a saved session
@@ -132,6 +147,19 @@ export default function FullComprehensionPractice() {
           if (session.sectionScores) {
             setSectionScores(session.sectionScores)
           }
+          
+          // Restore exercise indices
+          if (session.currentVisualExerciseIndex !== undefined) {
+            setCurrentVisualExerciseIndex(session.currentVisualExerciseIndex)
+          }
+          
+          if (session.currentNarrativeExerciseIndex !== undefined) {
+            setCurrentNarrativeExerciseIndex(session.currentNarrativeExerciseIndex)
+          }
+          
+          if (session.currentNonNarrativeExerciseIndex !== undefined) {
+            setCurrentNonNarrativeExerciseIndex(session.currentNonNarrativeExerciseIndex)
+          }
         }
       } catch (error) {
         console.error('Error loading saved session:', error)
@@ -145,13 +173,63 @@ export default function FullComprehensionPractice() {
       try {
         setLoading(true)
         
-        // 1. Fetch visual exercise (Section A)
-        const { data: visualData, error: visualError } = await supabase
+        // First, fetch all available exercises for each section
+        const { data: allVisualData, error: allVisualError } = await supabase
           .from('visual_exercises')
           .select('*')
           .order('id')
-          .limit(1)
-          .single()
+        
+        if (allVisualError) {
+          console.error('Error fetching all visual exercises:', allVisualError)
+        } else if (allVisualData && allVisualData.length > 0) {
+          setAllVisualExercises(allVisualData)
+        }
+        
+        const { data: allNarrativeData, error: allNarrativeError } = await supabase
+          .from('narrative_exercises')
+          .select('*')
+          .order('id')
+        
+        if (allNarrativeError) {
+          console.error('Error fetching all narrative exercises:', allNarrativeError)
+        } else if (allNarrativeData && allNarrativeData.length > 0) {
+          setAllNarrativeExercises(allNarrativeData)
+        }
+        
+        const { data: allNonNarrativeData, error: allNonNarrativeError } = await supabase
+          .from('non_narrative_exercises')
+          .select('*')
+          .order('id')
+        
+        if (allNonNarrativeError) {
+          console.error('Error fetching all non-narrative exercises:', allNonNarrativeError)
+        } else if (allNonNarrativeData && allNonNarrativeData.length > 0) {
+          setAllNonNarrativeExercises(allNonNarrativeData)
+        }
+        
+        // Check for exercise IDs in URL
+        const searchParams = new URLSearchParams(window.location.search)
+        const visualExerciseId = searchParams.get('visual')
+        const narrativeExerciseId = searchParams.get('narrative')
+        const nonNarrativeExerciseId = searchParams.get('nonnarrative')
+        
+        // 1. Fetch visual exercise (Section A)
+        let visualQuery = supabase.from('visual_exercises').select('*')
+        
+        if (visualExerciseId && allVisualData) {
+          visualQuery = visualQuery.eq('id', visualExerciseId)
+          // Update the current index
+          const index = allVisualData.findIndex(ex => ex.id.toString() === visualExerciseId)
+          if (index !== -1) {
+            setCurrentVisualExerciseIndex(index)
+          }
+        } else if (allVisualData && allVisualData.length > 0) {
+          visualQuery = visualQuery.eq('id', allVisualData[0].id)
+        } else {
+          visualQuery = visualQuery.order('id').limit(1)
+        }
+        
+        const { data: visualData, error: visualError } = await visualQuery.single()
         
         if (visualError) {
           console.error('Error fetching visual exercise:', visualError)
@@ -188,12 +266,22 @@ export default function FullComprehensionPractice() {
         }
         
         // 2. Fetch narrative exercise (Section B)
-        const { data: narrativeData, error: narrativeError } = await supabase
-          .from('narrative_exercises')
-          .select('*')
-          .order('id')
-          .limit(1)
-          .single()
+        let narrativeQuery = supabase.from('narrative_exercises').select('*')
+        
+        if (narrativeExerciseId && allNarrativeData) {
+          narrativeQuery = narrativeQuery.eq('id', narrativeExerciseId)
+          // Update the current index
+          const index = allNarrativeData.findIndex(ex => ex.id.toString() === narrativeExerciseId)
+          if (index !== -1) {
+            setCurrentNarrativeExerciseIndex(index)
+          }
+        } else if (allNarrativeData && allNarrativeData.length > 0) {
+          narrativeQuery = narrativeQuery.eq('id', allNarrativeData[0].id)
+        } else {
+          narrativeQuery = narrativeQuery.order('id').limit(1)
+        }
+        
+        const { data: narrativeData, error: narrativeError } = await narrativeQuery.single()
         
         if (narrativeError) {
           console.error('Error fetching narrative exercise:', narrativeError)
@@ -213,12 +301,22 @@ export default function FullComprehensionPractice() {
         }
         
         // 3. Fetch non-narrative exercise (Section C)
-        const { data: nonNarrativeData, error: nonNarrativeError } = await supabase
-          .from('non_narrative_exercises')
-          .select('* ')
-          .order('id')
-          .limit(1)
-          .single()
+        let nonNarrativeQuery = supabase.from('non_narrative_exercises').select('*')
+        
+        if (nonNarrativeExerciseId && allNonNarrativeData) {
+          nonNarrativeQuery = nonNarrativeQuery.eq('id', nonNarrativeExerciseId)
+          // Update the current index
+          const index = allNonNarrativeData.findIndex(ex => ex.id.toString() === nonNarrativeExerciseId)
+          if (index !== -1) {
+            setCurrentNonNarrativeExerciseIndex(index)
+          }
+        } else if (allNonNarrativeData && allNonNarrativeData.length > 0) {
+          nonNarrativeQuery = nonNarrativeQuery.eq('id', allNonNarrativeData[0].id)
+        } else {
+          nonNarrativeQuery = nonNarrativeQuery.order('id').limit(1)
+        }
+        
+        const { data: nonNarrativeData, error: nonNarrativeError } = await nonNarrativeQuery.single()
         
         if (nonNarrativeError) {
           console.error('Error fetching non-narrative exercise:', nonNarrativeError)
@@ -246,6 +344,28 @@ export default function FullComprehensionPractice() {
     
     fetchExerciseData()
   }, [])
+  
+  // Handle switching to next/previous exercise for each section
+  useEffect(() => {
+    if (exerciseAChanged) {
+      handleChangeVisualExercise()
+      setExerciseAChanged(false)
+    }
+  }, [exerciseAChanged])
+  
+  useEffect(() => {
+    if (exerciseBChanged) {
+      handleChangeNarrativeExercise()
+      setExerciseBChanged(false)
+    }
+  }, [exerciseBChanged])
+  
+  useEffect(() => {
+    if (exerciseCChanged) {
+      handleChangeNonNarrativeExercise()
+      setExerciseCChanged(false)
+    }
+  }, [exerciseCChanged])
   
   // Start the timer countdown
   useEffect(() => {
@@ -326,7 +446,15 @@ export default function FullComprehensionPractice() {
         answersC,
         timeRemainingTotal,
         sectionScores,
-        lastSaved: new Date().toISOString()
+        lastSaved: new Date().toISOString(),
+        // Save current exercise indices
+        currentVisualExerciseIndex,
+        currentNarrativeExerciseIndex,
+        currentNonNarrativeExerciseIndex,
+        // Save exercise IDs
+        visualExerciseId: visualExercise?.id,
+        narrativeExerciseId: narrativeExercise?.id,
+        nonNarrativeExerciseId: nonNarrativeExercise?.id
       }
       
       // Save current session
@@ -344,7 +472,13 @@ export default function FullComprehensionPractice() {
           name: "Full Comprehension Practice",
           progress: progress,
           lastSaved: new Date().toISOString(),
-          status: "in-progress"
+          status: "in-progress",
+          // Include exercise info for display
+          exercises: {
+            visual: visualExercise?.title || "Visual Exercise",
+            narrative: narrativeExercise?.title || "Narrative Exercise",
+            nonNarrative: nonNarrativeExercise?.title || "Non-Narrative Exercise"
+          }
         },
         ...recentSessions.filter(s => s.id !== 'fullPractice')
       ].slice(0, 5) // Keep only the 5 most recent sessions
@@ -588,7 +722,7 @@ export default function FullComprehensionPractice() {
         // Go to next section
         goToNextSection()
         
-        // Save progress
+        // Save progress with the current exercise ID
         saveProgress()
       } else {
         throw new Error('Received invalid feedback from evaluation')
@@ -628,7 +762,7 @@ export default function FullComprehensionPractice() {
         // Go to next section
         goToNextSection()
         
-        // Save progress
+        // Save progress with the current exercise ID
         saveProgress()
       } else {
         throw new Error('Received invalid feedback from evaluation')
@@ -695,7 +829,22 @@ export default function FullComprehensionPractice() {
             section: "Full",
             name: "Full Comprehension Practice",
             score: (sectionScores.A || 0) + (sectionScores.B || 0) + finalScore,
-            completedAt: new Date().toISOString()
+            completedAt: new Date().toISOString(),
+            // Store exercise details
+            exercises: {
+              visual: {
+                id: visualExercise?.id,
+                title: visualExercise?.title || "Visual Exercise"
+              },
+              narrative: {
+                id: narrativeExercise?.id,
+                title: narrativeExercise?.title || "Narrative Exercise"
+              },
+              nonNarrative: {
+                id: nonNarrativeExercise?.id,
+                title: nonNarrativeExercise?.title || "Non-Narrative Exercise"
+              }
+            }
           }
           
           // Get existing results from localStorage
@@ -736,6 +885,178 @@ export default function FullComprehensionPractice() {
   const formatFeedback = (feedbackText) => {
     if (!feedbackText) return ""
     return String(feedbackText)
+  }
+
+  // Functions to handle changing exercises
+  const handleChangeVisualExercise = async () => {
+    if (allVisualExercises.length <= 0) return
+    
+    try {
+      setLoading(true)
+      const selectedExercise = allVisualExercises[currentVisualExerciseIndex]
+      
+      // Update URL params
+      const url = new URL(window.location.href)
+      url.searchParams.set('visual', selectedExercise.id.toString())
+      window.history.pushState({}, '', url.toString())
+      
+      setVisualExercise(selectedExercise)
+      
+      // Fetch questions for the new exercise
+      const { data: visualQuestionsData, error: visualQuestionsError } = await supabase
+        .from('questions')
+        .select('*')
+        .eq('exercise_id', selectedExercise.id)
+        .order('question_order', { ascending: true })
+        
+      if (visualQuestionsError) {
+        console.error('Error fetching visual questions:', visualQuestionsError)
+      } else {
+        // Convert array to record object with question id as key
+        const questionRecord = visualQuestionsData.reduce((acc, question) => {
+          acc[question.id] = question
+          return acc
+        }, {})
+        
+        setVisualQuestions(questionRecord)
+        
+        // Reset answers
+        const initialAnswersA = visualQuestionsData.reduce((acc, question, index) => {
+          acc[index + 1] = ""
+          return acc
+        }, {})
+        
+        setAnswersA(initialAnswersA)
+        
+        // Reset section score
+        setSectionScores(prev => ({
+          ...prev,
+          A: null
+        }))
+      }
+    } catch (error) {
+      console.error('Error changing visual exercise:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+  
+  const handleChangeNarrativeExercise = async () => {
+    if (allNarrativeExercises.length <= 0) return
+    
+    try {
+      setLoading(true)
+      const selectedExercise = allNarrativeExercises[currentNarrativeExerciseIndex]
+      
+      // Update URL params
+      const url = new URL(window.location.href)
+      url.searchParams.set('narrative', selectedExercise.id.toString())
+      window.history.pushState({}, '', url.toString())
+      
+      setNarrativeExercise(selectedExercise)
+      
+      // Reset answers and initialize based on the new questions
+      if (selectedExercise.questions && selectedExercise.questions.length > 0) {
+        const initialAnswersB = selectedExercise.questions.reduce((acc, question, index) => {
+          acc[index + 1] = ""
+          return acc
+        }, {})
+        
+        setAnswersB(initialAnswersB)
+        
+        // Reset section score
+        setSectionScores(prev => ({
+          ...prev,
+          B: null
+        }))
+      }
+    } catch (error) {
+      console.error('Error changing narrative exercise:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+  
+  const handleChangeNonNarrativeExercise = async () => {
+    if (allNonNarrativeExercises.length <= 0) return
+    
+    try {
+      setLoading(true)
+      const selectedExercise = allNonNarrativeExercises[currentNonNarrativeExerciseIndex]
+      
+      // Update URL params
+      const url = new URL(window.location.href)
+      url.searchParams.set('nonnarrative', selectedExercise.id.toString())
+      window.history.pushState({}, '', url.toString())
+      
+      setNonNarrativeExercise(selectedExercise)
+      
+      // Reset word count
+      setWordCount(0)
+      
+      // Reset answers and initialize based on the new questions
+      if (selectedExercise.questions && selectedExercise.questions.length > 0) {
+        const initialAnswersC = selectedExercise.questions.reduce((acc, question, index) => {
+          acc[index + 1] = ""
+          return acc
+        }, {})
+        
+        setAnswersC(initialAnswersC)
+        
+        // Reset section score
+        setSectionScores(prev => ({
+          ...prev,
+          C: null
+        }))
+      }
+    } catch (error) {
+      console.error('Error changing non-narrative exercise:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+  
+  // Functions to navigate to next/previous exercise
+  const handleNextVisualExercise = () => {
+    if (currentVisualExerciseIndex < allVisualExercises.length - 1) {
+      setCurrentVisualExerciseIndex(prev => prev + 1)
+      setExerciseAChanged(true)
+    }
+  }
+  
+  const handlePrevVisualExercise = () => {
+    if (currentVisualExerciseIndex > 0) {
+      setCurrentVisualExerciseIndex(prev => prev - 1)
+      setExerciseAChanged(true)
+    }
+  }
+  
+  const handleNextNarrativeExercise = () => {
+    if (currentNarrativeExerciseIndex < allNarrativeExercises.length - 1) {
+      setCurrentNarrativeExerciseIndex(prev => prev + 1)
+      setExerciseBChanged(true)
+    }
+  }
+  
+  const handlePrevNarrativeExercise = () => {
+    if (currentNarrativeExerciseIndex > 0) {
+      setCurrentNarrativeExerciseIndex(prev => prev - 1)
+      setExerciseBChanged(true)
+    }
+  }
+  
+  const handleNextNonNarrativeExercise = () => {
+    if (currentNonNarrativeExerciseIndex < allNonNarrativeExercises.length - 1) {
+      setCurrentNonNarrativeExerciseIndex(prev => prev + 1)
+      setExerciseCChanged(true)
+    }
+  }
+  
+  const handlePrevNonNarrativeExercise = () => {
+    if (currentNonNarrativeExerciseIndex > 0) {
+      setCurrentNonNarrativeExerciseIndex(prev => prev - 1)
+      setExerciseCChanged(true)
+    }
   }
 
   return (
@@ -833,11 +1154,13 @@ export default function FullComprehensionPractice() {
               {/* Left panel - Content Display */}
               <div>
                 <div className="bg-white rounded-2xl shadow-sm p-6">
-                  <h2 className="text-xl font-bold text-gray-800 mb-4">
-                    {currentSection === "A" ? (visualExercise?.title || "Environmental Awareness") : 
-                     currentSection === "B" ? (narrativeExercise?.title || "The Enchanted Forest") : 
-                     (nonNarrativeExercise?.title || "The Future of Artificial Intelligence")}
-                  </h2>
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-xl font-bold text-gray-800">
+                      {currentSection === "A" ? (visualExercise?.title || "Environmental Awareness") : 
+                       currentSection === "B" ? (narrativeExercise?.title || "The Enchanted Forest") : 
+                       (nonNarrativeExercise?.title || "The Future of Artificial Intelligence")}
+                    </h2>
+                  </div>
                   
                   {/* Different content for each section */}
                   {currentSection === "A" ? (
@@ -991,49 +1314,119 @@ export default function FullComprehensionPractice() {
               {/* Spacer if there's no back button */}
               {currentSection === "A" && <div></div>}
               
-              {/* Next button */}
-              {currentSection === "A" && (
-                <button 
-                  onClick={evaluateSectionA}
-                  disabled={isSubmitting}
-                  className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-full shadow-sm transition-colors font-medium disabled:bg-blue-300"
-                >
-                  {isSubmitting ? "Submitting..." : "Next Section"}
-                  {!isSubmitting && <ArrowRight size={20} />}
-                </button>
-              )}
+              {/* Exercise navigation + Next button */}
+              <div className="flex items-center gap-2">
+                {/* Exercise navigation controls */}
+                {currentSection === "A" && allVisualExercises.length > 1 && (
+                  <div className="flex items-center gap-2 mr-3 bg-gray-50 px-2 py-1 rounded-full">
+                    <button 
+                      onClick={handlePrevVisualExercise}
+                      disabled={currentVisualExerciseIndex === 0}
+                      className={`p-1.5 rounded-full ${currentVisualExerciseIndex === 0 ? 'text-gray-300' : 'text-gray-500 hover:bg-gray-100'}`}
+                    >
+                      <ArrowLeft size={16} />
+                    </button>
+                    <span className="text-sm text-gray-600">
+                      Exercise {currentVisualExerciseIndex + 1}/{allVisualExercises.length}
+                    </span>
+                    <button 
+                      onClick={handleNextVisualExercise}
+                      disabled={currentVisualExerciseIndex === allVisualExercises.length - 1}
+                      className={`p-1.5 rounded-full ${currentVisualExerciseIndex === allVisualExercises.length - 1 ? 'text-gray-300' : 'text-gray-500 hover:bg-gray-100'}`}
+                    >
+                      <ArrowRight size={16} />
+                    </button>
+                  </div>
+                )}
+                
+                {currentSection === "B" && allNarrativeExercises.length > 1 && (
+                  <div className="flex items-center gap-2 mr-3 bg-gray-50 px-2 py-1 rounded-full">
+                    <button 
+                      onClick={handlePrevNarrativeExercise}
+                      disabled={currentNarrativeExerciseIndex === 0}
+                      className={`p-1.5 rounded-full ${currentNarrativeExerciseIndex === 0 ? 'text-gray-300' : 'text-gray-500 hover:bg-gray-100'}`}
+                    >
+                      <ArrowLeft size={16} />
+                    </button>
+                    <span className="text-sm text-gray-600">
+                      Exercise {currentNarrativeExerciseIndex + 1}/{allNarrativeExercises.length}
+                    </span>
+                    <button 
+                      onClick={handleNextNarrativeExercise}
+                      disabled={currentNarrativeExerciseIndex === allNarrativeExercises.length - 1}
+                      className={`p-1.5 rounded-full ${currentNarrativeExerciseIndex === allNarrativeExercises.length - 1 ? 'text-gray-300' : 'text-gray-500 hover:bg-gray-100'}`}
+                    >
+                      <ArrowRight size={16} />
+                    </button>
+                  </div>
+                )}
+                
+                {currentSection === "C" && allNonNarrativeExercises.length > 1 && (
+                  <div className="flex items-center gap-2 mr-3 bg-gray-50 px-2 py-1 rounded-full">
+                    <button 
+                      onClick={handlePrevNonNarrativeExercise}
+                      disabled={currentNonNarrativeExerciseIndex === 0}
+                      className={`p-1.5 rounded-full ${currentNonNarrativeExerciseIndex === 0 ? 'text-gray-300' : 'text-gray-500 hover:bg-gray-100'}`}
+                    >
+                      <ArrowLeft size={16} />
+                    </button>
+                    <span className="text-sm text-gray-600">
+                      Exercise {currentNonNarrativeExerciseIndex + 1}/{allNonNarrativeExercises.length}
+                    </span>
+                    <button 
+                      onClick={handleNextNonNarrativeExercise}
+                      disabled={currentNonNarrativeExerciseIndex === allNonNarrativeExercises.length - 1}
+                      className={`p-1.5 rounded-full ${currentNonNarrativeExerciseIndex === allNonNarrativeExercises.length - 1 ? 'text-gray-300' : 'text-gray-500 hover:bg-gray-100'}`}
+                    >
+                      <ArrowRight size={16} />
+                    </button>
+                  </div>
+                )}
               
-              {currentSection === "B" && (
-                <button 
-                  onClick={evaluateSectionB}
-                  disabled={isSubmitting}
-                  className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-full shadow-sm transition-colors font-medium disabled:bg-blue-300"
-                >
-                  {isSubmitting ? "Submitting..." : "Next Section"}
-                  {!isSubmitting && <ArrowRight size={20} />}
-                </button>
-              )}
-              
-              {currentSection === "C" && (
-                <button 
-                  onClick={evaluateSectionC}
-                  disabled={isSubmitting}
-                  className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-full shadow-sm transition-colors font-medium disabled:bg-orange-300"
-                >
-                  {isSubmitting ? "Submitting..." : "Complete Test"}
-                  {!isSubmitting && (
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path
-                        d="M5 12H19M19 12L12 5M19 12L12 19"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  )}
-                </button>
-              )}
+                {/* Next button */}
+                {currentSection === "A" && (
+                  <button 
+                    onClick={evaluateSectionA}
+                    disabled={isSubmitting}
+                    className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-full shadow-sm transition-colors font-medium disabled:bg-blue-300"
+                  >
+                    {isSubmitting ? "Submitting..." : "Next Section"}
+                    {!isSubmitting && <ArrowRight size={20} />}
+                  </button>
+                )}
+                
+                {currentSection === "B" && (
+                  <button 
+                    onClick={evaluateSectionB}
+                    disabled={isSubmitting}
+                    className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-full shadow-sm transition-colors font-medium disabled:bg-blue-300"
+                  >
+                    {isSubmitting ? "Submitting..." : "Next Section"}
+                    {!isSubmitting && <ArrowRight size={20} />}
+                  </button>
+                )}
+                
+                {currentSection === "C" && (
+                  <button 
+                    onClick={evaluateSectionC}
+                    disabled={isSubmitting}
+                    className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-full shadow-sm transition-colors font-medium disabled:bg-orange-300"
+                  >
+                    {isSubmitting ? "Submitting..." : "Complete Test"}
+                    {!isSubmitting && (
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path
+                          d="M5 12H19M19 12L12 5M19 12L12 19"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    )}
+                  </button>
+                )}
+              </div>
             </div>
           </>
         )}
