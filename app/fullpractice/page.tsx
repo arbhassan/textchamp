@@ -1060,9 +1060,9 @@ export default function FullComprehensionPractice() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f5f9ff]">
+    <div className="h-screen bg-[#f5f9ff] flex flex-col overflow-hidden">
       {/* Header */}
-      <header className="border-b bg-white py-4 px-6">
+      <header className="border-b bg-white py-4 px-6 flex-shrink-0">
         <div className="flex items-center justify-between max-w-7xl mx-auto">
           <div className="flex items-center gap-4">
             <Link href="/" className="flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-600 rounded-full hover:bg-blue-200 transition-colors">
@@ -1114,16 +1114,16 @@ export default function FullComprehensionPractice() {
       </header>
       
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-6 py-8">
+      <main className="flex flex-col max-w-7xl mx-auto px-6 py-8 flex-grow w-full">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-12">
             <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-500 rounded-full animate-spin"></div>
             <p className="mt-4 text-gray-600">Loading content...</p>
           </div>
         ) : (
-          <>
+          <div className="flex flex-col h-full">
             {/* Section tabs */}
-            <div className="flex mb-6 border-b">
+            <div className="flex mb-6 border-b flex-shrink-0">
               <button 
                 className={`px-4 py-2 ${currentSection === "A" ? "border-b-2 border-blue-500 font-medium text-blue-600" : "text-gray-500"}`}
                 onClick={() => setCurrentSection("A")}
@@ -1145,15 +1145,15 @@ export default function FullComprehensionPractice() {
             </div>
             
             {/* Recommended time */}
-            <div className="mb-4 text-gray-600">
+            <div className="mb-4 text-gray-600 flex-shrink-0">
               <p>Recommended time: {sectionContent[currentSection].timeBudget}</p>
             </div>
             
             {/* Section specific content */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 flex-grow overflow-hidden h-[calc(100vh-20rem)]">
               {/* Left panel - Content Display */}
-              <div>
-                <div className="bg-white rounded-2xl shadow-sm p-6">
+              <div className="overflow-y-auto pr-2 pb-4">
+                <div className="bg-white rounded-2xl shadow-sm p-6 h-auto mb-6">
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-xl font-bold text-gray-800">
                       {currentSection === "A" ? (visualExercise?.title || "Environmental Awareness") : 
@@ -1168,33 +1168,30 @@ export default function FullComprehensionPractice() {
                       <img src={sectionContent.A.content} alt={visualExercise?.title || "Visual Exercise"} className="w-full" />
                     </div>
                   ) : (
-                    <div className="prose max-w-none text-gray-700">
-                      {sectionContent[currentSection].content.split('\n\n').map((paragraph, index) => (
-                        <p key={index}>{paragraph}</p>
-                      ))}
+                    <div className="whitespace-pre-wrap prose max-w-none text-gray-700">
+                      <ReactMarkdown>
+                        {sectionContent[currentSection].content}
+                      </ReactMarkdown>
                     </div>
                   )}
                 </div>
               </div>
 
               {/* Right panel - Questions */}
-              <div className="space-y-6">
+              <div className="overflow-y-auto pr-2 pb-4 space-y-6">
                 {currentSection === "A" && (
                   <>
                     {/* Section A Questions */}
                     {Object.values(questionsA).map(question => (
                       <div key={question.id} className="bg-white rounded-2xl shadow-sm p-6">
                         <div className="flex items-center gap-4 mb-4">
-                          <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium">
+                          <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium text-sm">
                             {question.id}
                           </div>
-                          <h2 className="text-lg font-medium text-gray-800">{question.text}</h2>
-                          <div className="ml-2 text-sm text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded-md">
+                          <h2 className="text-lg font-medium text-gray-800 flex-1">{question.text}</h2>
+                          <div className="text-sm text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded-md whitespace-nowrap">
                             {question.marks || 1} {(question.marks || 1) === 1 ? 'mark' : 'marks'}
                           </div>
-                          <button className="text-gray-400 hover:text-gray-600 transition-colors ml-auto">
-                            <HelpCircle className="w-5 h-5" />
-                          </button>
                         </div>
                         <div>
                           <textarea
@@ -1215,16 +1212,13 @@ export default function FullComprehensionPractice() {
                     {Object.values(questionsB).map(question => (
                       <div key={question.id} className="bg-white rounded-2xl shadow-sm p-6">
                         <div className="flex items-center gap-4 mb-4">
-                          <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium">
+                          <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium text-sm">
                             {question.id}
                           </div>
-                          <h2 className="text-lg font-medium text-gray-800">{question.text}</h2>
-                          <div className="ml-2 text-sm text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded-md">
+                          <h2 className="text-lg font-medium text-gray-800 flex-1">{question.text}</h2>
+                          <div className="text-sm text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded-md whitespace-nowrap">
                             {question.marks || 1} {(question.marks || 1) === 1 ? 'mark' : 'marks'}
                           </div>
-                          <button className="text-gray-400 hover:text-gray-600 transition-colors ml-auto">
-                            <HelpCircle className="w-5 h-5" />
-                          </button>
                         </div>
                         <div>
                           <textarea
@@ -1245,24 +1239,14 @@ export default function FullComprehensionPractice() {
                     {Object.values(questionsC).map(question => (
                       <div key={question.id} className="bg-white rounded-2xl shadow-sm p-6">
                         <div className="flex items-center gap-4 mb-4">
-                          <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium">
+                          <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium text-sm">
                             {question.id}
                           </div>
-                          <h2 className="text-lg font-medium text-gray-800">
-                            {question.id === 1 ? "Main Idea" : 
-                             question.id === 2 ? "Summary Writing" : 
-                             "Critical Analysis"}
-                          </h2>
-                          <div className="ml-2 text-sm text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded-md">
+                          <h2 className="text-lg font-medium text-gray-800 flex-1">{question.text}</h2>
+                          <div className="text-sm text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded-md whitespace-nowrap">
                             {question.marks || 1} {(question.marks || 1) === 1 ? 'mark' : 'marks'}
                           </div>
-                          <button className="text-gray-400 hover:text-gray-600 transition-colors ml-auto">
-                            <HelpCircle className="w-5 h-5" />
-                          </button>
                         </div>
-                        <p className="mb-4 text-gray-700">
-                          {question.text}
-                        </p>
                         <div>
                           {question.id === 2 ? (
                             <>
@@ -1299,7 +1283,7 @@ export default function FullComprehensionPractice() {
             </div>
 
             {/* Navigation */}
-            <div className="mt-12 flex justify-between">
+            <div className="mt-8 flex justify-between flex-shrink-0">
               {/* Back button */}
               {currentSection !== "A" && (
                 <button 
@@ -1428,7 +1412,7 @@ export default function FullComprehensionPractice() {
                 )}
               </div>
             </div>
-          </>
+          </div>
         )}
       </main>
       

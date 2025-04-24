@@ -446,7 +446,7 @@ export default function SectionC() {
   return (
     <div className="min-h-screen bg-[#f5f9ff]">
       {/* Header */}
-      <header className="border-b bg-white py-4 px-6">
+      <header className="border-b bg-white py-4 px-6 sticky top-0 z-10">
         <div className="flex items-center justify-between max-w-7xl mx-auto">
           <div className="flex items-center gap-4">
             <Link href="/" className="flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-600 rounded-full hover:bg-blue-200 transition-colors">
@@ -485,68 +485,47 @@ export default function SectionC() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <main className="max-w-7xl mx-auto px-6 py-8 flex flex-col h-[calc(100vh-80px)]">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 flex-grow overflow-hidden">
           {/* Left panel - Passage Display */}
-          <div>
-            <div className="bg-white rounded-2xl shadow-sm p-6">
-              <h2 className="text-xl font-bold text-gray-800 mb-4">{exercise.title}</h2>
-              <div className="prose max-w-none text-gray-700">
-                {exercise.passage_text.split('\n\n').map((paragraph, idx) => (
-                  <p key={idx}>{paragraph}</p>
-                ))}
-              </div>
+          <div className="bg-white rounded-2xl shadow-sm p-6 overflow-y-auto max-h-[calc(100vh-180px)]">
+            <h2 className="text-xl font-bold text-gray-800 mb-4">{exercise.title}</h2>
+            <div className="whitespace-pre-wrap prose max-w-none text-gray-700">
+              {exercise.passage_text.split('\n\n').map((paragraph, idx) => (
+                <p key={idx}>{paragraph}</p>
+              ))}
             </div>
           </div>
 
           {/* Right panel - Questions */}
-          <div className="space-y-6">
-            {questions.map((question) => {
-              const isMainIdea = question.question_order === 1
-              const isSummary = question.question_order === 2
-              const isAnalysis = question.question_order === 3
-              
-              let title = "Question"
-              if (isMainIdea) title = "Main Idea"
-              if (isSummary) title = "Summary Writing"
-              if (isAnalysis) title = "Critical Analysis"
-              
-              return (
+          <div className="overflow-y-auto pr-2 max-h-[calc(100vh-180px)]">
+            <div className="space-y-6">
+              {questions.map((question) => (
                 <div key={question.id || `question-${question.question_order}`} className="bg-white rounded-2xl shadow-sm p-6">
                   <div className="flex items-center gap-4 mb-4">
-                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium">
+                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium text-sm flex-shrink-0">
                       {question.question_order}
                     </div>
-                    <h2 className="text-lg font-medium text-gray-800">{title}</h2>
-                    <div className="ml-2 text-sm text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded-md">
+                    <h3 className="text-gray-700 flex-grow">
+                      {question.question_text}
+                    </h3>
+                    <div className="text-sm text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded-md whitespace-nowrap">
                       {question.marks || 1} {(question.marks || 1) === 1 ? 'mark' : 'marks'}
                     </div>
-                    <button className="text-gray-400 hover:text-gray-600 transition-colors ml-auto">
-                      <HelpCircle className="w-5 h-5" />
-                    </button>
                   </div>
-                  <p className="mb-4 text-gray-700">
-                    {question.question_text}
-                  </p>
+                  
                   <div>
                     <textarea
                       className="w-full h-24 p-4 border border-gray-200 text-gray-700 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder={isSummary ? "Write your summary here..." : "Type your answer here..."}
+                      placeholder="Type your answer here..."
                       value={answers[question.id || `question-${question.question_order}`] || ""}
                       onChange={(e) => handleAnswerChange(question.id || `question-${question.question_order}`, e.target.value)}
                     />
-                    {isSummary && (
-                      <div className="mt-2 text-sm text-gray-500 flex justify-between">
-                        <span>Word count: {wordCount}</span>
-                        <span className={wordCount > 80 ? "text-red-500" : "text-green-500"}>
-                          {wordCount > 80 ? "Exceeds limit" : "Within limit"}
-                        </span>
-                      </div>
-                    )}
+                    
                   </div>
                 </div>
-              )
-            })}
+              ))}
+            </div>
           </div>
         </div>
 
@@ -626,8 +605,8 @@ export default function SectionC() {
           </div>
         )}
 
-        {/* Navigation */}
-        <div className="mt-12 flex justify-end">
+        {/* Navigation - Fixed at bottom */}
+        <div className="mt-6 flex justify-end pt-4">
           <div className="flex gap-4">
             {currentExerciseIndex < allExercises.length - 1 && (
               <button

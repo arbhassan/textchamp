@@ -1315,7 +1315,7 @@ export default function AdminPanel() {
                           <label htmlFor={`question-${index}`} className="block text-sm font-medium text-gray-700">
                             Question {index + 1}
                           </label>
-                          <input
+                          <textarea
                             type="text"
                             name="text"
                             id={`question-${index}`}
@@ -1571,7 +1571,7 @@ export default function AdminPanel() {
                           <label htmlFor={`question-text-${index}`} className="block text-sm font-medium text-gray-700">
                             Question {index + 1}
                           </label>
-                          <input
+                          <textarea
                             type="text"
                             name="question_text"
                             id={`question-text-${index}`}

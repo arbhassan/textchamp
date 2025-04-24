@@ -450,9 +450,9 @@ export default function SectionB() {
     .filter(id => questions[id]);
   
   return (
-    <div className="min-h-screen bg-[#f5f9ff]">
+    <div className="h-screen bg-[#f5f9ff] flex flex-col overflow-hidden">
       {/* Header */}
-      <header className="border-b bg-white py-4 px-6">
+      <header className="border-b bg-white py-4 px-6 flex-shrink-0">
         <div className="flex items-center justify-between max-w-7xl mx-auto">
           <div className="flex items-center gap-4">
             <Link href="/" className="flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-600 rounded-full hover:bg-blue-200 transition-colors">
@@ -491,13 +491,13 @@ export default function SectionB() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <main className="flex flex-col max-w-7xl mx-auto px-6 py-8 flex-grow w-full">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-[calc(100vh-13rem)]">
           {/* Left panel - Story Display */}
-          <div>
-            <div className="bg-white rounded-2xl shadow-sm p-6">
+          <div className="overflow-y-auto pr-2 pb-2">
+            <div className="bg-white rounded-2xl shadow-sm p-6 h-auto">
               <h2 className="text-xl font-bold text-gray-800 mb-4">{exercise.title}</h2>
-              <div className="prose max-w-none text-gray-700">
+              <div className="whitespace-pre-wrap prose max-w-none text-gray-700">
                 <ReactMarkdown>
                   {exercise.story_text}
                 </ReactMarkdown>
@@ -506,20 +506,17 @@ export default function SectionB() {
           </div>
 
           {/* Right panel - Questions */}
-          <div className="space-y-6">
+          <div className="overflow-y-auto pr-2 pb-2 space-y-6">
             {questionIds.map(questionId => (
               <div key={questionId} className="bg-white rounded-2xl shadow-sm p-6">
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium">
+                <div className="flex flex-wrap items-start gap-4 mb-4">
+                  <div className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium">
                     {questions[questionId] && (questions[questionId].question_order || questionId)}
                   </div>
-                  <h2 className="text-lg font-medium text-gray-800">{questions[questionId] && questions[questionId].question_text}</h2>
-                  <div className="ml-2 text-sm text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded-md">
+                  <h2 className="flex-1 text-lg font-medium text-gray-800">{questions[questionId] && questions[questionId].question_text}</h2>
+                  <div className="flex-shrink-0 text-sm text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded-md">
                     {questions[questionId] && (questions[questionId].marks || 1)} {questions[questionId] && ((questions[questionId].marks || 1) === 1 ? 'mark' : 'marks')}
                   </div>
-                  <button className="text-gray-400 hover:text-gray-600 transition-colors ml-auto">
-                    <HelpCircle className="w-5 h-5" />
-                  </button>
                 </div>
                 <div>
                   {questions[questionId] && (
@@ -537,7 +534,7 @@ export default function SectionB() {
         </div>
 
         {/* Navigation */}
-        <div className="mt-12 flex justify-end">
+        <div className="mt-6 flex justify-end">
           <div className="flex gap-4">
             {currentExerciseIndex < allExercises.length - 1 && (
               <button

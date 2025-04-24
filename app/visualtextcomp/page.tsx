@@ -426,9 +426,9 @@ export default function SectionA() {
   const sortedQuestions = Object.values(questions).sort((a, b) => a.question_order - b.question_order);
 
   return (
-    <div className="min-h-screen bg-[#f5f9ff]">
+    <div className="h-screen bg-[#f5f9ff] flex flex-col overflow-hidden">
       {/* Header */}
-      <header className="border-b bg-white py-4 px-6">
+      <header className="border-b bg-white py-4 px-6 flex-shrink-0">
         <div className="flex items-center justify-between max-w-7xl mx-auto">
           <div className="flex items-center gap-4">
             <Link href="/" className="flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-600 rounded-full hover:bg-blue-200 transition-colors">
@@ -467,11 +467,11 @@ export default function SectionA() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <main className="flex flex-col max-w-7xl mx-auto px-6 py-8 flex-grow w-full">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-[calc(100vh-13rem)]">
           {/* Left panel - Image Display */}
-          <div>
-            <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+          <div className="overflow-y-auto pr-2 pb-2">
+            <div className="bg-white rounded-2xl shadow-sm overflow-hidden h-auto">
               <img 
                 src={exercise.image_url || "/environment-awareness.jpg"} 
                 alt={exercise.title || "Visual Exercise"} 
@@ -483,20 +483,17 @@ export default function SectionA() {
           </div>
 
           {/* Right panel - Questions */}
-          <div className="space-y-6">
+          <div className="overflow-y-auto pr-2 pb-2 space-y-6">
             {sortedQuestions.map((question, index) => (
               <div key={question.id} className="bg-white rounded-2xl shadow-sm p-6">
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium">
+                <div className="flex flex-wrap items-start gap-4 mb-4">
+                  <div className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium">
                     {index + 1}
                   </div>
-                  <h2 className="text-lg font-medium text-gray-800">{question.text}</h2>
-                  <div className="ml-2 text-sm text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded-md">
+                  <h2 className="flex-1 text-lg font-medium text-gray-800">{question.text}</h2>
+                  <div className="flex-shrink-0 text-sm text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded-md">
                     {question.marks || 1} {(question.marks || 1) === 1 ? 'mark' : 'marks'}
                   </div>
-                  <button className="text-gray-400 hover:text-gray-600 transition-colors ml-auto">
-                    <HelpCircle className="w-5 h-5" />
-                  </button>
                 </div>
                 <div>
                   <textarea
@@ -588,7 +585,7 @@ export default function SectionA() {
         )}
 
         {/* Navigation */}
-        <div className="mt-12 flex justify-between">
+        <div className="mt-6 flex justify-between">
           <div></div> {/* Empty div for flex justification */}
           <div className="flex gap-4">
             {currentExerciseIndex < allExercises.length - 1 && (
