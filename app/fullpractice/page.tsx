@@ -526,8 +526,11 @@ export default function FullComprehensionPractice() {
       [questionId]: value
     }))
     
-    // Update word count for summary question
-    if (questionId === 2) {
+    // Check if this is the last question in section C
+    const lastQuestionId = Math.max(...Object.keys(questionsC).map(Number))
+    
+    // Update word count for the last question only
+    if (questionId === lastQuestionId) {
       const words = value.trim().split(/\s+/).filter(Boolean).length
       setWordCount(words)
     }
@@ -1256,7 +1259,9 @@ export default function FullComprehensionPractice() {
                 {currentSection === "C" && (
                   <>
                     {/* Section C Questions */}
-                    {Object.values(questionsC).map(question => (
+                    {Object.values(questionsC).map((question, index, array) => {
+                      const isLastQuestion = index === array.length - 1;
+                      return (
                       <div key={question.id} className="bg-white rounded-2xl shadow-sm p-6">
                         <div className="flex items-center gap-4 mb-4">
                           <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium text-sm">
@@ -1282,6 +1287,18 @@ export default function FullComprehensionPractice() {
                                 }}
                               />
                             </>
+                          ) : isLastQuestion ? (
+                            <>
+                              <div className="mb-2 text-sm text-gray-600 flex justify-between">
+                                <span className="bg-blue-100 px-3 py-1 rounded-md font-medium text-blue-700">Word count: {answersC[question.id]?.trim().split(/\s+/).filter(Boolean).length || 0}</span>
+                              </div>
+                              <textarea
+                                className="w-full h-24 p-4 border border-gray-200 text-gray-700 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                placeholder="Type your answer here..."
+                                value={answersC[question.id]}
+                                onChange={(e) => handleAnswerChangeC(question.id, e.target.value)}
+                              />
+                            </>
                           ) : (
                             <textarea
                               className="w-full h-24 p-4 border border-gray-200 text-gray-700 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -1292,7 +1309,7 @@ export default function FullComprehensionPractice() {
                           )}
                         </div>
                       </div>
-                    ))}
+                    )})}
                   </>
                 )}
               </div>

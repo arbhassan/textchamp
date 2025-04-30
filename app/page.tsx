@@ -1,11 +1,12 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Bell, Clock, HelpCircle, Moon, Play, CheckCircle, Clock3, Sun } from "lucide-react"
+import { Bell, Clock, HelpCircle, Moon, Play, CheckCircle, Clock3, Sun, Eye } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { useTheme } from "next-themes"
 import { Header } from "@/components/header"
 import Link from "next/link"
+import { ExerciseReviewModal } from "@/components/exercise-review-modal"
 
 // Define the type for a practice result
 interface PracticeResult {
@@ -35,6 +36,10 @@ export default function Dashboard() {
   const [weeklyCompleted, setWeeklyCompleted] = useState(0)
   const [weeklyTarget, setWeeklyTarget] = useState(5)
   const [latestAchievement, setLatestAchievement] = useState<{title: string, detail: string} | null>(null)
+  
+  // Add state for review modal
+  const [showReviewModal, setShowReviewModal] = useState(false)
+  const [selectedSession, setSelectedSession] = useState<SavedSession | null>(null)
   
   useEffect(() => {
     // Load practice results from localStorage
@@ -185,6 +190,15 @@ export default function Dashboard() {
   const clearProgressData = () => {
     localStorage.removeItem('practiceResults')
     window.dispatchEvent(new CustomEvent('practiceComplete'))
+  }
+
+  // Function to show review modal for a completed session
+  const handleShowReview = (session: SavedSession, e: React.MouseEvent) => {
+    e.preventDefault() // Prevent navigating to the session URL
+    if (session.status === "completed") {
+      setSelectedSession(session)
+      setShowReviewModal(true)
+    }
   }
 
   return (
@@ -445,10 +459,11 @@ export default function Dashboard() {
                 <Link 
                   href={getSessionUrl(session.id)} 
                   key={session.id} 
-                  title={session.status === "completed" ? "This session is completed and cannot be resumed" : "Continue this session"}
-                  className={session.status === "completed" ? "cursor-default" : ""}
+                  title={session.status === "completed" ? "View this completed session" : "Continue this session"}
+                  className={`block ${session.status === "completed" ? "cursor-pointer" : ""}`}
+                  onClick={session.status === "completed" ? (e) => handleShowReview(session, e) : undefined}
                 >
-                  <Card className={`shadow-sm ${session.status === "completed" ? "opacity-80" : "hover:shadow-md transition-shadow"}`}>
+                  <Card className={`shadow-sm ${session.status === "completed" ? "opacity-95" : "hover:shadow-md transition-shadow"}`}>
                     <CardContent className="p-6">
                       <div className="flex justify-between items-start mb-4">
                         <div className="flex items-center gap-2">
@@ -475,9 +490,10 @@ export default function Dashboard() {
                       <h3 className="text-lg font-bold text-foreground mb-1">{session.name}</h3>
                       <p className="text-muted-foreground">Last saved {formatDate(session.lastSaved)}</p>
                       {session.status === "completed" && (
-                        <p className="text-xs text-green-600 dark:text-green-400 mt-2">
-                          This session is complete and cannot be resumed
-                        </p>
+                        <div className="flex items-center gap-1 mt-2 text-sm text-blue-600 dark:text-blue-400">
+                          <Eye size={14} />
+                          <span>View Review</span>
+                        </div>
                       )}
                     </CardContent>
                   </Card>
@@ -502,6 +518,13 @@ export default function Dashboard() {
           </Card>
         </div>
       </div>
+      
+      {/* Review Modal */}
+      <ExerciseReviewModal 
+        isOpen={showReviewModal}
+        onClose={() => setShowReviewModal(false)}
+        sessionData={selectedSession}
+      />
     </div>
   )
 }
