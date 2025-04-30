@@ -285,7 +285,11 @@ export default function SectionC() {
     
     // If this is the summary question (question_order === 2), update word count
     const summaryQuestion = questions.find(q => q.question_order === 2)
-    if (summaryQuestion && (questionId === summaryQuestion.id || questionId === `question-${summaryQuestion.question_order}`)) {
+    const lastQuestion = questions.find(q => q.question_order === questions.length)
+    
+    // Update word count for summary question or the last question
+    if ((summaryQuestion && (questionId === summaryQuestion.id || questionId === `question-${summaryQuestion.question_order}`)) ||
+        (lastQuestion && (questionId === lastQuestion.id || questionId === `question-${lastQuestion.question_order}`))) {
       const words = value.trim().split(/\s+/).filter(Boolean).length
       setWordCount(words)
     }
@@ -521,7 +525,14 @@ export default function SectionC() {
                       value={answers[question.id || `question-${question.question_order}`] || ""}
                       onChange={(e) => handleAnswerChange(question.id || `question-${question.question_order}`, e.target.value)}
                     />
-                    
+                    {/* Display word counter for the last question */}
+                    {question.question_order === questions.length && (
+                      <div className="flex justify-end mt-2">
+                        <span className="text-sm text-gray-500">
+                          Words: {answers[question.id || `question-${question.question_order}`]?.trim().split(/\s+/).filter(Boolean).length || 0}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

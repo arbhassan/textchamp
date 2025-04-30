@@ -66,9 +66,15 @@ export default function FullComprehensionPractice() {
     C: null
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [showFeedback, setShowFeedback] = useState(false)
   const [saveStatus, setSaveStatus] = useState("")
   const [progress, setProgress] = useState(0) // 0 to 100
+  
+  // Added state for feedback data for each section
+  const [sectionFeedback, setSectionFeedback] = useState({
+    A: "",
+    B: "",
+    C: ""
+  })
   
   // Added state for exercises and questions from Supabase
   const [loading, setLoading] = useState(true)
@@ -146,6 +152,11 @@ export default function FullComprehensionPractice() {
           
           if (session.sectionScores) {
             setSectionScores(session.sectionScores)
+          }
+          
+          // Load section feedback
+          if (session.sectionFeedback) {
+            setSectionFeedback(session.sectionFeedback)
           }
           
           // Restore exercise indices
@@ -419,21 +430,6 @@ export default function FullComprehensionPractice() {
     setProgress(newProgress)
   }, [answersA, answersB, answersC])
   
-  // Close feedback modal when ESC key is pressed
-  useEffect(() => {
-    const handleEsc = (event) => {
-      if (event.key === 'Escape') {
-        setShowFeedback(false)
-      }
-    }
-    
-    window.addEventListener('keydown', handleEsc)
-    
-    return () => {
-      window.removeEventListener('keydown', handleEsc)
-    }
-  }, [])
-  
   // Save the current session progress
   const saveProgress = () => {
     try {
@@ -446,6 +442,11 @@ export default function FullComprehensionPractice() {
         answersC,
         timeRemainingTotal,
         sectionScores,
+        sectionFeedback,
+        // Save questions for the feedback page
+        questionsA,
+        questionsB,
+        questionsC,
         lastSaved: new Date().toISOString(),
         // Save current exercise indices
         currentVisualExerciseIndex,
@@ -688,7 +689,7 @@ export default function FullComprehensionPractice() {
       title: "Section C – Non-Narrative Comprehension",
       description: "Answer non-fiction + summary writing",
       contentType: "text",
-      content: nonNarrativeExercise?.content || "The rapid advancement of artificial intelligence (AI) technology is reshaping our world in unprecedented ways. From healthcare to transportation, AI systems are becoming increasingly sophisticated and capable of handling complex tasks that were once thought to be exclusively human domains.\n\nRecent developments in machine learning algorithms have led to significant breakthroughs in natural language processing and computer vision. These advances have enabled AI systems to understand and respond to human speech with remarkable accuracy, translate between languages in real-time, and identify objects and patterns in images with precision that sometimes exceeds human capabilities.\n\nHowever, the integration of AI into society raises important ethical considerations. Questions about privacy, accountability, and the potential impact on employment have become central to the discourse surrounding AI development. Experts argue that establishing robust regulatory frameworks is crucial to ensure that AI technologies benefit humanity while minimizing potential risks.",
+      content: nonNarrativeExercise?.passage_text || "The rapid advancement of artificial intelligence (AI) technology is reshaping our world in unprecedented ways. From healthcare to transportation, AI systems are becoming increasingly sophisticated and capable of handling complex tasks that were once thought to be exclusively human domains.\n\nRecent developments in machine learning algorithms have led to significant breakthroughs in natural language processing and computer vision. These advances have enabled AI systems to understand and respond to human speech with remarkable accuracy, translate between languages in real-time, and identify objects and patterns in images with precision that sometimes exceeds human capabilities.\n\nHowever, the integration of AI into society raises important ethical considerations. Questions about privacy, accountability, and the potential impact on employment have become central to the discourse surrounding AI development. Experts argue that establishing robust regulatory frameworks is crucial to ensure that AI technologies benefit humanity while minimizing potential risks.",
       timeBudget: nonNarrativeExercise?.time_limit ? `${Math.floor(nonNarrativeExercise.time_limit / 60)} minutes` : "45 minutes"
     }
   }
@@ -712,6 +713,12 @@ export default function FullComprehensionPractice() {
       if (result && result.feedback) {
         // Ensure score is properly converted to a number
         const finalScore = typeof result.score === 'number' ? result.score : Number(result.score) || 0
+        
+        // Store section feedback
+        setSectionFeedback(prev => ({
+          ...prev,
+          A: result.feedback
+        }))
         
         // Update section scores
         setSectionScores(prev => ({
@@ -753,6 +760,12 @@ export default function FullComprehensionPractice() {
         // Ensure score is properly converted to a number
         const finalScore = typeof result.score === 'number' ? result.score : Number(result.score) || 0
         
+        // Store section feedback
+        setSectionFeedback(prev => ({
+          ...prev,
+          B: result.feedback
+        }))
+        
         // Update section scores
         setSectionScores(prev => ({
           ...prev,
@@ -793,16 +806,20 @@ export default function FullComprehensionPractice() {
         // Ensure score is properly converted to a number
         const finalScore = typeof result.score === 'number' ? result.score : Number(result.score) || 0
         
+        // Store section feedback
+        setSectionFeedback(prev => ({
+          ...prev,
+          C: result.feedback
+        }))
+        
         // Update section scores
         setSectionScores(prev => ({
           ...prev,
           C: finalScore
         }))
         
-        // Show final feedback
-        setFeedback(result.feedback)
-        setScore(finalScore)
-        setShowFeedback(true)
+        // Save all progress data including questions and feedback
+        saveProgress()
         
         // Mark session as completed
         try {
@@ -859,6 +876,9 @@ export default function FullComprehensionPractice() {
           
           // Dispatch event to notify other components that a practice is complete
           window.dispatchEvent(new CustomEvent('practiceComplete'))
+          
+          // Redirect to feedback page
+          router.push('/fullpractice/feedback')
         } catch (error) {
           console.error('Error saving practice result:', error)
         }
@@ -1251,10 +1271,6 @@ export default function FullComprehensionPractice() {
                           {question.id === 2 ? (
                             <>
                               <div className="mb-2 text-sm text-gray-500 flex justify-between">
-                                <span>Write a concise summary</span>
-                                <span className={wordCount > 80 ? "text-red-500 font-medium" : ""}>
-                                  {wordCount}/80 words
-                                </span>
                               </div>
                               <textarea
                                 className="w-full h-24 p-4 border border-gray-200 text-gray-700 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -1416,141 +1432,7 @@ export default function FullComprehensionPractice() {
         )}
       </main>
       
-      {/* Final Feedback Modal */}
-      {showFeedback && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-3xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-auto">
-            <div className="p-8">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-800">Your Results</h2>
-                <button 
-                  onClick={() => setShowFeedback(false)}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-                {/* Total Score Circle */}
-                <div className="flex flex-col items-center justify-center">
-                  <div className="relative w-[120px] h-[120px]">
-                    <svg className="w-full h-full transform -rotate-90" viewBox="0 0 120 120">
-                      {/* Background circle */}
-                      <circle
-                        cx="60"
-                        cy="60"
-                        r="50"
-                        fill="none"
-                        stroke="#e6e6e6"
-                        strokeWidth="10"
-                      />
-                      
-                      {/* Progress circle */}
-                      {score !== null && (
-                        <circle
-                          cx="60"
-                          cy="60"
-                          r="50"
-                          fill="none"
-                          stroke="#4ade80"
-                          strokeWidth="10"
-                          strokeLinecap="round"
-                          strokeDasharray={calculateCircleProgress(score).circumference}
-                          strokeDashoffset={calculateCircleProgress(score).offset}
-                          className="transition-all duration-1000 ease-out"
-                        />
-                      )}
-                    </svg>
-                    
-                    {/* Score text */}
-                    <div className="absolute inset-0 flex items-center justify-center flex-col">
-                      <div className="flex items-baseline">
-                        <span className="text-4xl text-gray-800 font-bold">{score !== null ? score : 0}</span>
-                        <span className="text-xl font-medium text-gray-500">/5</span>
-                      </div>
-                      <span className="text-sm text-gray-500 mt-1">Section C</span>
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Section scores */}
-                <div className="md:col-span-3 grid grid-cols-3 gap-4">
-                  {/* Section A Score */}
-                  <div className="bg-amber-50 p-4 rounded-xl">
-                    <h3 className="font-medium text-amber-800 mb-2">Section A</h3>
-                    <div className="flex items-center gap-2">
-                      <div className="text-2xl font-bold text-amber-700">{sectionScores.A || 0}</div>
-                      <div className="text-amber-600">/5 points</div>
-                    </div>
-                  </div>
-                  
-                  {/* Section B Score */}
-                  <div className="bg-orange-50 p-4 rounded-xl">
-                    <h3 className="font-medium text-orange-800 mb-2">Section B</h3>
-                    <div className="flex items-center gap-2">
-                      <div className="text-2xl font-bold text-orange-700">{sectionScores.B || 0}</div>
-                      <div className="text-orange-600">/5 points</div>
-                    </div>
-                  </div>
-                  
-                  {/* Section C Score */}
-                  <div className="bg-purple-50 p-4 rounded-xl">
-                    <h3 className="font-medium text-purple-800 mb-2">Section C</h3>
-                    <div className="flex items-center gap-2">
-                      <div className="text-2xl font-bold text-purple-700">{sectionScores.C || 0}</div>
-                      <div className="text-purple-600">/5 points</div>
-                    </div>
-                  </div>
-                  
-                  {/* Total Score */}
-                  <div className="col-span-3 bg-blue-50 p-4 rounded-xl">
-                    <h3 className="font-medium text-blue-800 mb-2">Overall Score</h3>
-                    <div className="flex items-center gap-2">
-                      <div className="text-2xl font-bold text-blue-700">
-                        {((sectionScores.A || 0) + (sectionScores.B || 0) + (sectionScores.C || 0))}
-                      </div>
-                      <div className="text-blue-600">/15 points</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Feedback Text */}
-              <div>
-                <h3 className="text-lg font-bold text-gray-800 mb-3">Final Feedback - Section C</h3>
-                <div className="prose prose-sm max-w-none text-gray-700 markdown-content">
-                  <ReactMarkdown 
-                    components={{
-                      h2: ({node, ...props}) => <h2 className="text-lg font-bold text-blue-700 mt-4 mb-2" {...props} />,
-                      h3: ({node, ...props}) => <h3 className="text-md font-bold text-gray-800 mt-3 mb-1" {...props} />,
-                      p: ({node, ...props}) => <p className="mb-3" {...props} />,
-                      ul: ({node, ...props}) => <ul className="list-disc pl-5 mb-3" {...props} />,
-                      ol: ({node, ...props}) => <ol className="list-decimal pl-5 mb-3" {...props} />,
-                      li: ({node, ...props}) => <li className="mb-1" {...props} />,
-                      strong: ({node, ...props}) => <strong className="font-bold text-blue-600" {...props} />,
-                      em: ({node, ...props}) => <em className="italic text-gray-800" {...props} />,
-                      blockquote: ({node, ...props}) => <blockquote className="pl-4 border-l-4 border-gray-200 italic my-2" {...props} />
-                    }}
-                  >
-                    {formatFeedback(feedback)}
-                  </ReactMarkdown>
-                </div>
-                
-                <div className="mt-8 flex justify-center md:justify-end">
-                  <Link href="/">
-                    <button
-                      className="px-6 py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors"
-                    >
-                      Return to Dashboard
-                    </button>
-                  </Link>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Feedback is now on a separate page at /fullpractice/feedback */}
     </div>
   )
 } 

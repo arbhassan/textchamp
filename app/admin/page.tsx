@@ -1114,6 +1114,41 @@ export default function AdminPanel() {
     }
   }
 
+  // Delete visual exercise
+  const handleDeleteExercise = async (exerciseId: number) => {
+    if (!confirm("Are you sure you want to delete this exercise? This action cannot be undone.")) {
+      return
+    }
+    
+    try {
+      setLoading(true)
+      
+      const { error } = await supabase
+        .from('visual_exercises')
+        .delete()
+        .eq('id', exerciseId)
+      
+      if (error) throw error
+      
+      // Refresh the list after deletion
+      const { data, error: refreshError } = await supabase
+        .from('visual_exercises')
+        .select('*')
+        .order('id')
+      
+      if (refreshError) throw refreshError
+      
+      setExercises(data || [])
+      setMessage({ text: "Exercise deleted successfully", type: "success" })
+      
+    } catch (error) {
+      console.error('Error deleting exercise:', error)
+      setMessage({ text: "Failed to delete exercise", type: "error" })
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-100">
       <header className="bg-white shadow">
@@ -1399,7 +1434,13 @@ export default function AdminPanel() {
                         <div className="flex justify-between items-center">
                           <div className="flex items-center">
                             <div className="flex-shrink-0 h-12 w-12 bg-gray-100 rounded-md overflow-hidden">
-                              <img src={exercise.image_url} alt={exercise.title} className="h-full w-full object-cover" />
+                              {exercise.image_url ? (
+                                <img src={exercise.image_url} alt={exercise.title} className="h-full w-full object-cover" />
+                              ) : (
+                                <div className="h-full w-full flex items-center justify-center bg-gray-200">
+                                  <Image size={20} className="text-gray-400" />
+                                </div>
+                              )}
                             </div>
                             <div className="ml-4">
                               <h3 className="text-lg font-medium text-gray-900">{exercise.title}</h3>
@@ -1429,6 +1470,13 @@ export default function AdminPanel() {
                               title={expandedExercise === exercise.id ? "Collapse" : "Expand"}
                             >
                               {expandedExercise === exercise.id ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                            </button>
+                            <button
+                              onClick={() => handleDeleteExercise(exercise.id)}
+                              className="text-red-600 hover:text-red-800 p-2"
+                              title="Delete"
+                            >
+                              <Trash2 size={20} />
                             </button>
                           </div>
                         </div>
