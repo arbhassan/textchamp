@@ -1,8 +1,9 @@
 "use client"
 
 import Image from "next/image"
-import { Moon, Sun } from "lucide-react"
+import { Bell, Moon, Sun, LogOut } from "lucide-react"
 import { useTheme } from "next-themes"
+import { useAuth } from "@/contexts/AuthContext"
 
 interface HeaderProps {
   completedCount?: number
@@ -11,6 +12,11 @@ interface HeaderProps {
 
 export function Header({ completedCount = 0, targetCount = 5 }: HeaderProps) {
   const { theme, setTheme } = useTheme()
+  const { signOut, user } = useAuth()
+
+  // Get user's first name from metadata
+  const firstName = user?.user_metadata?.first_name || 
+                    (user?.email ? user.email.split('@')[0] : "there")
 
   const toggleTheme = () => {
     setTheme(theme === "dark" ? "light" : "dark")
@@ -32,7 +38,7 @@ export function Header({ completedCount = 0, targetCount = 5 }: HeaderProps) {
             />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Good Morning, Josh!</h1>
+            <h1 className="text-2xl font-bold text-foreground">Good Morning, {firstName}!</h1>
             <p className="text-muted-foreground">
               You've completed {completedCount >= targetCount ? "all" : completedCount} of {targetCount} practices this week
               {completedCount > targetCount && ` (+${completedCount - targetCount} extra)`}
@@ -47,6 +53,15 @@ export function Header({ completedCount = 0, targetCount = 5 }: HeaderProps) {
           >
             {theme === "dark" ? <Sun size={20} /> : <Moon size={20} />}
           </button>
+          {user && (
+            <button 
+              className="p-2 text-muted-foreground hover:text-foreground rounded-full"
+              onClick={() => signOut()}
+              title="Sign Out"
+            >
+              <LogOut size={20} />
+            </button>
+          )}
         </div>
       </header>
     </div>

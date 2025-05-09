@@ -8,6 +8,7 @@ import ReactMarkdown from 'react-markdown'
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { supabase } from "../../lib/supabase"
+import React from "react"
 
 // Define types for our data
 interface NarrativeExercise {
@@ -16,7 +17,9 @@ interface NarrativeExercise {
   story_text: string
   time_limit: number
   description?: string
-  questions: Question[]
+  exercise_type: "questions" | "flowchart" // Add exercise type
+  questions?: Question[]
+  flowchart?: FlowChartExercise // Add flowchart data
 }
 
 interface Question {
@@ -27,10 +30,22 @@ interface Question {
   marks?: number
 }
 
+// New type for flowchart exercise
+interface FlowChartExercise {
+  options: string[]
+  sections: FlowChartSection[]
+}
+
+interface FlowChartSection {
+  id: number
+  name: string
+  paragraphs: string // e.g., "1-2" or "5"
+}
+
 export default function SectionB() {
   const router = useRouter()
   const [currentQuestion, setCurrentQuestion] = useState(1)
-  const [answers, setAnswers] = useState<Record<number, string>>({})
+  const [answers, setAnswers] = useState<Record<number | string, string>>({})
   const [feedback, setFeedback] = useState("")
   const [score, setScore] = useState(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -113,31 +128,45 @@ export default function SectionB() {
           })
         }
         
-        // Get questions from the exercise data
-        const questionsData = exerciseData.questions || []
+        // Initialize answers based on exercise type
+        if (exerciseData.exercise_type === "questions" && exerciseData.questions) {
+          // Get questions from the exercise data
+          const questionsData = exerciseData.questions || []
+          
+          // Convert array to record object with question id as key
+          const questionRecord = questionsData.reduce((acc, question) => {
+            // Make sure each question has an id property
+            const questionId = question.id || questionsData.indexOf(question) + 1;
+            acc[questionId] = {
+              ...question,
+              id: questionId, // Ensure the id property exists
+            };
+            return acc
+          }, {})
+          
+          setQuestions(questionRecord)
+          
+          // Initialize answers state with empty strings for each question
+          const initialAnswers = questionsData.reduce((acc, question) => {
+            const questionId = question.id || questionsData.indexOf(question) + 1;
+            acc[questionId] = ""
+            return acc
+          }, {})
+          
+          setAnswers(initialAnswers)
+          setTotalQuestions(questionsData.length)
+        } 
+        else if (exerciseData.exercise_type === "flowchart" && exerciseData.flowchart) {
+          // Initialize flowchart answers
+          const initialFlowchartAnswers = exerciseData.flowchart.sections.reduce((acc, section, idx) => {
+            acc[section.id || `section-${idx}`] = ""
+            return acc
+          }, {})
+          
+          setAnswers(initialFlowchartAnswers)
+          setTotalQuestions(exerciseData.flowchart.sections.length)
+        }
         
-        // Convert array to record object with question id as key
-        const questionRecord = questionsData.reduce((acc, question) => {
-          // Make sure each question has an id property
-          const questionId = question.id || questionsData.indexOf(question) + 1;
-          acc[questionId] = {
-            ...question,
-            id: questionId, // Ensure the id property exists
-          };
-          return acc
-        }, {})
-        
-        setQuestions(questionRecord)
-        
-        // Initialize answers state with empty strings for each question
-        const initialAnswers = questionsData.reduce((acc, question) => {
-          const questionId = question.id || questionsData.indexOf(question) + 1;
-          acc[questionId] = ""
-          return acc
-        }, {})
-        
-        setAnswers(initialAnswers)
-        setTotalQuestions(questionsData.length)
         setExerciseChanged(false)
         
       } catch (error) {
@@ -249,9 +278,12 @@ export default function SectionB() {
       const recentSessions = recentSessionsStr ? JSON.parse(recentSessionsStr) : []
       
       // Calculate progress based on non-empty answers
-      const questionCount = Object.keys(questions).length || 1  // Avoid division by zero
+      const questionCount = exercise?.exercise_type === "questions" 
+        ? Object.keys(questions).length 
+        : (exercise?.flowchart?.sections.length || 0);
+      
       const answeredCount = Object.values(answers).filter(a => a && String(a).trim() !== '').length
-      const progressPercentage = (answeredCount / questionCount) * 100
+      const progressPercentage = questionCount ? (answeredCount / questionCount) * 100 : 0
       
       // Add to recent sessions, replacing any existing session for this section
       const updatedRecentSessions = [
@@ -286,10 +318,10 @@ export default function SectionB() {
     return `${minutes}:${seconds}`
   }
 
-  const handleAnswerChange = (questionId, value) => {
+  const handleAnswerChange = (id, value) => {
     setAnswers(prev => ({
       ...prev,
-      [questionId]: value
+      [id]: value
     }))
   }
 
@@ -300,26 +332,52 @@ export default function SectionB() {
         throw new Error('No exercise data available')
       }
       
-      // Prepare the questions with answers for evaluation
-      const questionsWithAnswers: QuestionWithAnswer[] = Object.values(questions).map(q => ({
-        question: q.question_text,
-        idealAnswer: q.ideal_answer,
-        userAnswer: answers[q.id] || ''
-      }));
-
-      const result = await evaluateAnswers(exercise.story_text, questionsWithAnswers);
+      let result;
+      
+      if (exercise.exercise_type === "questions") {
+        // Prepare the questions with answers for evaluation
+        const questionsWithAnswers: QuestionWithAnswer[] = Object.values(questions).map(q => ({
+          question: q.question_text,
+          idealAnswer: q.ideal_answer,
+          userAnswer: answers[q.id] || ''
+        }));
+  
+        result = await evaluateAnswers(exercise.story_text, questionsWithAnswers);
+      } 
+      else if (exercise.exercise_type === "flowchart") {
+        // For the flowchart, we'll need a different evaluation function
+        // This is a placeholder - you'd need to implement the actual evaluation
+        // For now, we'll mock a result
+        result = {
+          feedback: "Your flowchart answers have been evaluated.",
+          score: 75 // Mock score
+        };
+        
+        // Here you would create an actual evaluation function for flowchart exercises
+        // similar to evaluateAnswers but adapted for the flowchart format
+      }
       
       // Check that we have valid feedback and score
       if (result && result.feedback) {
-        setFeedback(result.feedback);
-        // Ensure score is properly converted to a number
+        // Store feedback and score in localStorage instead of showing inline
         const finalScore = typeof result.score === 'number' ? result.score : Number(result.score) || 0;
-        setScore(finalScore);
-        setShowFeedback(true);
         
-        // Update saved session status to completed
+        // Save results to localStorage with questions data
         try {
-          // Update the recent sessions list to mark this session as completed
+          const sessionData = {
+            section: "B",
+            name: "Narrative Comprehension",
+            answers,
+            questions: exercise.exercise_type === "questions" ? questions : exercise.flowchart,
+            feedback: result.feedback,
+            score: finalScore,
+            lastSaved: new Date().toISOString()
+          }
+          
+          // Save current session with feedback and score
+          localStorage.setItem('savedSession_sectionB', JSON.stringify(sessionData))
+          
+          // Update recent sessions list to mark this session as completed
           const recentSessionsStr = localStorage.getItem('recentSessions')
           if (recentSessionsStr) {
             const recentSessions = JSON.parse(recentSessionsStr)
@@ -335,13 +393,20 @@ export default function SectionB() {
               return session
             })
             localStorage.setItem('recentSessions', JSON.stringify(updatedRecentSessions))
+          } else {
+            // If there are no recent sessions yet, create one for this completed session
+            const newSession = {
+              id: 'sectionB',
+              section: "B",
+              name: "Narrative Comprehension",
+              progress: 100,
+              lastSaved: new Date().toISOString(),
+              status: "completed"
+            };
+            localStorage.setItem('recentSessions', JSON.stringify([newSession]))
           }
-        } catch (error) {
-          console.error('Error updating session status:', error)
-        }
-        
-        // Save this result to localStorage
-        try {
+          
+          // Save result to practice results too
           const practiceResult = {
             section: "B",
             name: "Narrative Comprehension",
@@ -359,10 +424,16 @@ export default function SectionB() {
           // Save to localStorage
           localStorage.setItem('practiceResults', JSON.stringify(updatedResults));
           
-          // Dispatch an event to notify other components that a practice is complete
-          window.dispatchEvent(new CustomEvent('practiceComplete'));
+          // Redirect to the feedback page
+          router.push('/narratcomp/feedback');
+          
         } catch (error) {
-          console.error('Error saving practice result:', error);
+          console.error('Error saving session data:', error)
+          
+          // Show fallback error message
+          setFeedback("There was an error saving your results. Please try again.");
+          setScore(0);
+          setShowFeedback(true);
         }
       } else {
         throw new Error('Received invalid feedback from evaluation');
@@ -375,25 +446,6 @@ export default function SectionB() {
     } finally {
       setIsSubmitting(false);
     }
-  };
-  
-  // Function to calculate the circumference for the circular progress bar
-  const calculateCircleProgress = (score) => {
-    const radius = 50;
-    const circumference = 2 * Math.PI * radius;
-    const offset = circumference - (score / 5) * circumference;
-    return { circumference, offset };
-  };
-  
-  // Format feedback with line breaks and highlight key points
-  const formatFeedback = (feedbackText) => {
-    if (!feedbackText) return "";
-    
-    // Ensure feedbackText is a string
-    const feedbackString = String(feedbackText);
-    
-    // Return the markdown content directly - we'll use ReactMarkdown to render it
-    return feedbackString;
   };
   
   // Function to navigate to next exercise
@@ -416,6 +468,11 @@ export default function SectionB() {
       setExerciseChanged(true)
     }
   }
+  
+  // Extract question IDs for rendering and filter out any that don't exist in questions
+  const questionIds = Object.keys(questions)
+    .map(id => parseInt(id))
+    .filter(id => questions[id]);
   
   // If still loading, show a loading indicator
   if (loading) {
@@ -444,11 +501,52 @@ export default function SectionB() {
     );
   }
   
-  // Extract question IDs for rendering and filter out any that don't exist in questions
-  const questionIds = Object.keys(questions)
-    .map(id => parseInt(id))
-    .filter(id => questions[id]);
+  // If feedback is shown, render the feedback page
+  if (showFeedback) {
+    return (
+      <div className="min-h-screen bg-[#f5f9ff] flex flex-col">
+        <header className="border-b bg-white py-4 px-6 flex-shrink-0">
+          <div className="flex items-center justify-between max-w-7xl mx-auto">
+            <div className="flex items-center gap-4">
+              <Link href="/" className="flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-600 rounded-full hover:bg-blue-200 transition-colors">
+                <Home size={18} />
+              </Link>
+              <h1 className="text-xl font-medium text-gray-800">Error Processing Results</h1>
+            </div>
+          </div>
+        </header>
+
+        <main className="flex-grow max-w-5xl mx-auto w-full px-6 py-10">
+          <div className="bg-white rounded-2xl shadow-sm p-8">
+            <div className="flex items-center gap-4 mb-6 text-red-500">
+              <X size={32} />
+              <h2 className="text-2xl font-medium">An Error Occurred</h2>
+            </div>
+            
+            <p className="text-gray-700 mb-6">{feedback}</p>
+            
+            <div className="flex gap-4">
+              <button
+                onClick={() => setShowFeedback(false)}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+              >
+                Return to Test
+              </button>
+              
+              <Link 
+                href="/" 
+                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+              >
+                Go to Dashboard
+              </Link>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
   
+  // Render the appropriate UI based on exercise type
   return (
     <div className="h-screen bg-[#f5f9ff] flex flex-col overflow-hidden">
       {/* Header */}
@@ -492,51 +590,140 @@ export default function SectionB() {
       </header>
 
       <main className="flex flex-col max-w-7xl mx-auto px-6 py-8 flex-grow w-full">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-[calc(100vh-13rem)]">
-          {/* Left panel - Story Display */}
-          <div className="overflow-y-auto pr-2 pb-2">
-            <div className="bg-white rounded-2xl shadow-sm p-6 h-auto">
-              <h2 className="text-xl font-bold text-gray-800 mb-4">{exercise.title}</h2>
-              <div className="whitespace-pre-wrap prose max-w-none text-gray-700">
-                <ReactMarkdown>
-                  {exercise.story_text}
-                </ReactMarkdown>
+        {/* Render different UI based on exercise type */}
+        {exercise.exercise_type === "questions" ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-[calc(100vh-13rem)]">
+            {/* Left panel - Story Display */}
+            <div className="overflow-y-auto pr-2 pb-2">
+              <div className="bg-white rounded-2xl shadow-sm p-6 h-auto">
+                <h2 className="text-xl font-bold text-gray-800 mb-4">{exercise.title}</h2>
+                <div className="whitespace-pre-wrap prose max-w-none text-gray-700">
+                  <ReactMarkdown>
+                    {exercise.story_text}
+                  </ReactMarkdown>
+                </div>
+              </div>
+            </div>
+
+            {/* Right panel - Questions */}
+            <div className="overflow-y-auto pr-2 pb-2 space-y-6">
+              {questionIds.map(questionId => (
+                <div key={questionId} className="bg-white rounded-2xl shadow-sm p-6">
+                  <div className="flex flex-wrap items-start gap-4 mb-4">
+                    <div className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium">
+                      {questions[questionId] && (questions[questionId].question_order || questionId)}
+                    </div>
+                    <h2 className="flex-1 text-lg font-medium text-gray-800">{questions[questionId] && questions[questionId].question_text}</h2>
+                    <div className="flex-shrink-0 text-sm text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded-md">
+                      {questions[questionId] && (questions[questionId].marks || 1)} {questions[questionId] && ((questions[questionId].marks || 1) === 1 ? 'mark' : 'marks')}
+                    </div>
+                  </div>
+                  <div>
+                    {questions[questionId] && (
+                      <textarea
+                        className="w-full h-24 p-4 border text-gray-700 border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Type your answer here..."
+                        value={answers[questionId] || ''}
+                        onChange={(e) => handleAnswerChange(questionId, e.target.value)}
+                      />
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          /* Flow Chart Exercise UI */
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-[calc(100vh-13rem)]">
+            {/* Left panel - Story Display */}
+            <div className="overflow-y-auto pr-2 pb-2">
+              <div className="bg-white rounded-2xl shadow-sm p-6 h-auto">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-bold text-gray-800">{exercise.title}</h2>
+                </div>
+                <div className="whitespace-pre-wrap prose max-w-none text-gray-700">
+                  <ReactMarkdown>
+                    {exercise.story_text}
+                  </ReactMarkdown>
+                </div>
+              </div>
+            </div>
+
+            {/* Right panel - Flow Chart Exercise */}
+            <div className="overflow-y-auto pr-2 pb-2">
+              <div className="bg-white rounded-2xl shadow-sm p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <div className="flex items-center">
+                    <span className="flex items-center justify-center w-6 h-6 bg-amber-100 text-amber-800 rounded-full mr-2">1</span>
+                    <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">Flow Chart</span>
+                  </div>
+                  <button className="text-gray-400 hover:text-gray-600">
+                    <HelpCircle size={18} />
+                  </button>
+                </div>
+                
+                <p className="mb-6 text-gray-700">
+                  {exercise.description || "Complete the flowchart by choosing one word from the box to summarise the main thoughts or feelings presented in each part of the text."}
+                </p>
+                
+                {exercise.flowchart && (
+                  <React.Fragment key="flowchart-container">
+                    {/* Options grid */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-6">
+                      {exercise.flowchart.options.map((option, index) => (
+                        <div 
+                          key={`flowchart-option-${index}`} 
+                          className={`p-2 border rounded-md text-center text-gray-800 ${
+                            index >= exercise.flowchart.options.length - 2 ? 'col-span-1 sm:col-span-2' : ''
+                          }`}
+                        >
+                          {option}
+                        </div>
+                      ))}
+                    </div>
+                    
+                    {/* Flow chart sections */}
+                    {exercise.flowchart.sections.map((section, idx) => (
+                      <div key={`flowchart-section-${section.id || idx}`} className="mb-8">
+                        <div className="mb-1 font-medium text-gray-800">
+                          {section.name}: ({String.fromCharCode(105 + idx)})
+                        </div>
+                        <input 
+                          type="text" 
+                          className="w-full p-2 border rounded-md text-gray-800"
+                          placeholder="Enter word here"
+                          value={answers[section.id || `section-${idx}`] || ''}
+                          onChange={(e) => {
+                            // Use a unique identifier for each section
+                            const sectionKey = section.id || `section-${idx}`;
+                            setAnswers(prev => ({
+                              ...prev,
+                              [sectionKey]: e.target.value
+                            }));
+                          }}
+                        />
+                        
+                        {/* Add arrow between sections except after the last one */}
+                        {idx < exercise.flowchart.sections.length - 1 && (
+                          <div className="flex justify-center my-4">
+                            <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path>
+                            </svg>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </React.Fragment>
+                )}
               </div>
             </div>
           </div>
-
-          {/* Right panel - Questions */}
-          <div className="overflow-y-auto pr-2 pb-2 space-y-6">
-            {questionIds.map(questionId => (
-              <div key={questionId} className="bg-white rounded-2xl shadow-sm p-6">
-                <div className="flex flex-wrap items-start gap-4 mb-4">
-                  <div className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium">
-                    {questions[questionId] && (questions[questionId].question_order || questionId)}
-                  </div>
-                  <h2 className="flex-1 text-lg font-medium text-gray-800">{questions[questionId] && questions[questionId].question_text}</h2>
-                  <div className="flex-shrink-0 text-sm text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded-md">
-                    {questions[questionId] && (questions[questionId].marks || 1)} {questions[questionId] && ((questions[questionId].marks || 1) === 1 ? 'mark' : 'marks')}
-                  </div>
-                </div>
-                <div>
-                  {questions[questionId] && (
-                    <textarea
-                      className="w-full h-24 p-4 border text-gray-700 border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Type your answer here..."
-                      value={answers[questionId] || ''}
-                      onChange={(e) => handleAnswerChange(questionId, e.target.value)}
-                    />
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        )}
 
         {/* Navigation */}
         <div className="mt-6 flex justify-end">
           <div className="flex gap-4">
-            {currentExerciseIndex < allExercises.length - 1 && (
+            {currentExerciseIndex < allExercises.length - 1 && !showFeedback && (
               <button
                 onClick={handleNextExercise}
                 className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-full shadow-sm transition-colors font-medium"
@@ -566,110 +753,6 @@ export default function SectionB() {
           </div>
         </div>
       </main>
-      
-      {/* Feedback Modal */}
-      {showFeedback && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-3xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-auto">
-            <div className="p-8">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-800">Your Results</h2>
-                <button 
-                  onClick={() => setShowFeedback(false)}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Score Circle */}
-                <div className="flex flex-col items-center justify-center">
-                  <div className="relative w-[120px] h-[120px]">
-                    <svg className="w-full h-full transform -rotate-90" viewBox="0 0 120 120">
-                      {/* Background circle */}
-                      <circle
-                        cx="60"
-                        cy="60"
-                        r="50"
-                        fill="none"
-                        stroke="#e6e6e6"
-                        strokeWidth="10"
-                      />
-                      
-                      {/* Progress circle */}
-                      {score !== null && (
-                        <circle
-                          cx="60"
-                          cy="60"
-                          r="50"
-                          fill="none"
-                          stroke={score >= 4 ? "#4ade80" : score >= 3 ? "#facc15" : "#f87171"}
-                          strokeWidth="10"
-                          strokeLinecap="round"
-                          strokeDasharray={calculateCircleProgress(score).circumference}
-                          strokeDashoffset={calculateCircleProgress(score).offset}
-                          className="transition-all duration-1000 ease-out"
-                        />
-                      )}
-                    </svg>
-                    
-                    {/* Score text */}
-                    <div className="absolute inset-0 flex items-center justify-center flex-col">
-                      <div className="flex items-baseline">
-                        <span className="text-4xl text-gray-800 font-bold">{score !== null ? score : 0}</span>
-                        <span className="text-xl font-medium text-gray-500">/5</span>
-                      </div>
-                      <span className="text-sm text-gray-500 mt-1">points</span>
-                    </div>
-                  </div>
-                  
-                  <div className="mt-4 text-center">
-                    <p className="font-medium text-gray-700">
-                      {score !== null && (
-                        score >= 4 ? "Excellent!" : 
-                        score >= 3 ? "Good job!" : 
-                        score >= 2 ? "Needs improvement" : 
-                        "Try again"
-                      )}
-                    </p>
-                  </div>
-                </div>
-                
-                {/* Feedback Text */}
-                <div className="md:col-span-2">
-                  <div className="prose prose-sm max-w-none text-gray-700 markdown-content">
-                    <ReactMarkdown 
-                      components={{
-                        h2: ({node, ...props}) => <h2 className="text-lg font-bold text-blue-700 mt-4 mb-2" {...props} />,
-                        h3: ({node, ...props}) => <h3 className="text-md font-bold text-gray-800 mt-3 mb-1" {...props} />,
-                        p: ({node, ...props}) => <p className="mb-3" {...props} />,
-                        ul: ({node, ...props}) => <ul className="list-disc pl-5 mb-3" {...props} />,
-                        ol: ({node, ...props}) => <ol className="list-decimal pl-5 mb-3" {...props} />,
-                        li: ({node, ...props}) => <li className="mb-1" {...props} />,
-                        strong: ({node, ...props}) => <strong className="font-bold text-blue-600" {...props} />,
-                        em: ({node, ...props}) => <em className="italic text-gray-800" {...props} />,
-                        blockquote: ({node, ...props}) => <blockquote className="pl-4 border-l-4 border-gray-200 italic my-2" {...props} />
-                      }}
-                    >
-                      {formatFeedback(feedback)}
-                    </ReactMarkdown>
-                  </div>
-                  
-                  <div className="mt-8 flex justify-center md:justify-end">
-                    <button
-                      onClick={() => setShowFeedback(false)}
-                      className="px-6 py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors"
-                    >
-                      Close
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 } 

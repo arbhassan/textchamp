@@ -310,15 +310,45 @@ export default function SectionC() {
       
       // Check that we have valid feedback and score
       if (result && result.feedback) {
-        setFeedback(result.feedback)
-        // Ensure score is properly converted to a number
+        // Store feedback and score in localStorage instead of showing inline
         const finalScore = typeof result.score === 'number' ? result.score : Number(result.score) || 0
-        setScore(finalScore)
-        setShowFeedback(true)
         
-        // Update saved session status to completed
+        // Enhance questions with feedback marks before saving
+        const enhancedQuestions = questions.map((question, index) => {
+          // Determine if this question is correct based on result data (if available)
+          // Default to 0 marks but this should be updated from evaluation result
+          const isCorrect = result.correctAnswers && result.correctAnswers[index] === true;
+          const mark = isCorrect ? (question.marks || 1) : 0;
+          
+          return {
+            ...question,
+            id: question.id || `question-${question.question_order}`,
+            question_text: question.question_text,
+            text: question.question_text, // Add text field for consistency with feedback page expectations
+            ideal_answer: question.ideal_answer,
+            answer: question.ideal_answer, // Add answer field for consistency with feedback page expectations
+            marks: question.marks || 1, // Ensure we have a marks field
+            mark: mark, // Add the mark field (0 for incorrect, marks value for correct)
+            userAnswer: answers[question.id || `question-${question.question_order}`] || "" // Include user's answer
+          }
+        });
+        
+        // Save results to localStorage with questions data
         try {
-          // Update the recent sessions list to mark this session as completed
+          const sessionData = {
+            section: "C",
+            name: "Non-Narrative Comprehension",
+            answers,
+            questions: enhancedQuestions, // Include enhanced questions data
+            feedback: result.feedback,
+            score: finalScore,
+            lastSaved: new Date().toISOString()
+          }
+          
+          // Save current session with feedback and score
+          localStorage.setItem('savedSession_sectionC', JSON.stringify(sessionData))
+          
+          // Update recent sessions list to mark this session as completed
           const recentSessionsStr = localStorage.getItem('recentSessions')
           if (recentSessionsStr) {
             const recentSessions = JSON.parse(recentSessionsStr)
@@ -334,13 +364,20 @@ export default function SectionC() {
               return session
             })
             localStorage.setItem('recentSessions', JSON.stringify(updatedRecentSessions))
+          } else {
+            // If there are no recent sessions yet, create one for this completed session
+            const newSession = {
+              id: 'sectionC',
+              section: "C",
+              name: "Non-Narrative Comprehension",
+              progress: 100,
+              lastSaved: new Date().toISOString(),
+              status: "completed"
+            };
+            localStorage.setItem('recentSessions', JSON.stringify([newSession]))
           }
-        } catch (error) {
-          console.error('Error updating session status:', error)
-        }
-        
-        // Save this result to localStorage
-        try {
+          
+          // Save result to practice results too
           const practiceResult = {
             section: "C",
             name: "Non-Narrative Comprehension",
@@ -358,10 +395,16 @@ export default function SectionC() {
           // Save to localStorage
           localStorage.setItem('practiceResults', JSON.stringify(updatedResults))
           
-          // Dispatch an event to notify other components that a practice is complete
-          window.dispatchEvent(new CustomEvent('practiceComplete'))
+          // Redirect to the feedback page
+          router.push('/nonnarratcomp/feedback');
+          
         } catch (error) {
-          console.error('Error saving practice result:', error)
+          console.error('Error saving session data:', error)
+          
+          // Show fallback error message
+          setFeedback("There was an error saving your results. Please try again.")
+          setScore(0)
+          setShowFeedback(true)
         }
       } else {
         throw new Error('Received invalid feedback from evaluation')
@@ -376,25 +419,6 @@ export default function SectionC() {
     }
   }
   
-  // Function to calculate the circumference for the circular progress bar
-  const calculateCircleProgress = (score) => {
-    const radius = 50
-    const circumference = 2 * Math.PI * radius
-    const offset = circumference - (score / 5) * circumference
-    return { circumference, offset }
-  }
-  
-  // Format feedback with line breaks and highlight key points
-  const formatFeedback = (feedbackText) => {
-    if (!feedbackText) return ""
-    
-    // Ensure feedbackText is a string
-    const feedbackString = String(feedbackText)
-    
-    // Return the markdown content directly - we'll use ReactMarkdown to render it
-    return feedbackString
-  }
-
   // Function to navigate to next exercise
   const handleNextExercise = () => {
     if (currentExerciseIndex < allExercises.length - 1) {
@@ -445,6 +469,51 @@ export default function SectionC() {
         </div>
       </div>
     )
+  }
+
+  // If feedback is shown, render the error message
+  if (showFeedback) {
+    return (
+      <div className="min-h-screen bg-[#f5f9ff] flex flex-col">
+        <header className="border-b bg-white py-4 px-6 flex-shrink-0">
+          <div className="flex items-center justify-between max-w-7xl mx-auto">
+            <div className="flex items-center gap-4">
+              <Link href="/" className="flex items-center justify-center w-8 h-8 bg-blue-100 text-blue-600 rounded-full hover:bg-blue-200 transition-colors">
+                <Home size={18} />
+              </Link>
+              <h1 className="text-xl font-medium text-gray-800">Error Processing Results</h1>
+            </div>
+          </div>
+        </header>
+
+        <main className="flex-grow max-w-5xl mx-auto w-full px-6 py-10">
+          <div className="bg-white rounded-2xl shadow-sm p-8">
+            <div className="flex items-center gap-4 mb-6 text-red-500">
+              <X size={32} />
+              <h2 className="text-2xl font-medium">An Error Occurred</h2>
+            </div>
+            
+            <p className="text-gray-700 mb-6">{feedback}</p>
+            
+            <div className="flex gap-4">
+              <button
+                onClick={() => setShowFeedback(false)}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+              >
+                Return to Test
+              </button>
+              
+              <Link 
+                href="/" 
+                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+              >
+                Go to Dashboard
+              </Link>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
   }
 
   return (
@@ -540,86 +609,10 @@ export default function SectionC() {
           </div>
         </div>
 
-        {/* Feedback modal */}
-        {showFeedback && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="p-6 flex flex-col">
-                <div className="flex justify-between items-start mb-4">
-                  <div className="flex items-center gap-4">
-                    <div className="relative w-24 h-24">
-                      <svg className="w-full h-full" viewBox="0 0 120 120">
-                        <circle 
-                          cx="60" 
-                          cy="60" 
-                          r="50" 
-                          fill="none" 
-                          stroke="#e5e7eb" 
-                          strokeWidth="12"
-                        />
-                        {score !== null && (
-                          <circle 
-                            cx="60" 
-                            cy="60" 
-                            r="50" 
-                            fill="none" 
-                            stroke={score >= 3 ? "#4ade80" : "#f87171"} 
-                            strokeWidth="12"
-                            strokeDasharray={calculateCircleProgress(score).circumference}
-                            strokeDashoffset={calculateCircleProgress(score).offset}
-                            transform="rotate(-90 60 60)"
-                            strokeLinecap="round"
-                          />
-                        )}
-                        <text 
-                          x="60" 
-                          y="60" 
-                          textAnchor="middle" 
-                          dominantBaseline="middle" 
-                          fill="#111827" 
-                          fontSize="30" 
-                          fontWeight="bold"
-                        >
-                          {score !== null ? score : "?"}
-                        </text>
-                        <text 
-                          x="60" 
-                          y="80" 
-                          textAnchor="middle" 
-                          dominantBaseline="middle" 
-                          fill="#6b7280" 
-                          fontSize="16"
-                        >
-                          /5
-                        </text>
-                      </svg>
-                    </div>
-                    <div>
-                      <h2 className="text-2xl font-bold text-gray-900">Your Feedback</h2>
-                      <p className="text-gray-600">
-                        Here's how you did on the non-narrative comprehension section
-                      </p>
-                    </div>
-                  </div>
-                  <button 
-                    onClick={() => setShowFeedback(false)}
-                    className="text-gray-400 hover:text-gray-600"
-                  >
-                    <X className="w-6 h-6" />
-                  </button>
-                </div>
-                <div className="prose max-w-none text-gray-700 mt-4">
-                  <ReactMarkdown>{formatFeedback(feedback)}</ReactMarkdown>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Navigation - Fixed at bottom */}
         <div className="mt-6 flex justify-end pt-4">
           <div className="flex gap-4">
-            {currentExerciseIndex < allExercises.length - 1 && (
+            {currentExerciseIndex < allExercises.length - 1 && !showFeedback && (
               <button
                 onClick={handleNextExercise}
                 className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-full shadow-sm transition-colors font-medium"

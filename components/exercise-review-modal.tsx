@@ -30,10 +30,18 @@ export function ExerciseReviewModal({ isOpen, onClose, sessionData }: ExerciseRe
 
   // Get section data based on section ID
   const getSectionData = (sectionId: string) => {
-    // Get saved session data from localStorage
-    const savedSession = localStorage.getItem(`savedSession_${sectionId}`)
-    if (!savedSession) return null
-    return JSON.parse(savedSession)
+    // Get saved session data from localStorage - check both formats
+    const savedSessionKey = `savedSession_${sectionId}`;
+    const savedSessionKeyAlt = `savedSession_section${sectionId}`;
+    
+    // Try both key formats
+    let savedSession = localStorage.getItem(savedSessionKey);
+    if (!savedSession) {
+      savedSession = localStorage.getItem(savedSessionKeyAlt);
+    }
+    
+    if (!savedSession) return null;
+    return JSON.parse(savedSession);
   }
 
   const renderSectionQuestions = (sectionId: string, questions: any, answers: any, feedback: any) => {
@@ -45,7 +53,7 @@ export function ExerciseReviewModal({ isOpen, onClose, sessionData }: ExerciseRe
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold text-foreground">Score</h3>
             <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-              {sessionData.sectionScores?.[sectionId] || 0} marks
+              {sessionData.score || sessionData.sectionScores?.[sectionId] || 0} marks
             </div>
           </div>
         </div>
@@ -53,12 +61,15 @@ export function ExerciseReviewModal({ isOpen, onClose, sessionData }: ExerciseRe
         {Object.values(questions).map((question: any, index: number) => {
           const questionId = question.id || index
           const userAnswer = answers[questionId] || ""
-          const modelAnswer = question.answer || ""
+          
+          // Handle different field names based on section type
+          const questionText = question.text || question.question_text || ""
+          const modelAnswer = question.answer || question.ideal_answer || ""
           
           return (
             <div key={questionId} className="border rounded-lg p-4">
               <div className="mb-4">
-                <h4 className="font-medium text-lg text-foreground">{question.text || question.question_text}</h4>
+                <h4 className="font-medium text-lg text-foreground">{questionText}</h4>
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">

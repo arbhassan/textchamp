@@ -20,7 +20,9 @@ export interface NarrativeExercise {
   story_text: string;
   description?: string;
   time_limit: number;
-  questions: NarrativeQuestion[];
+  exercise_type?: "questions" | "flowchart";
+  questions?: NarrativeQuestion[];
+  flowchart?: FlowChartExercise;
 }
 
 export interface NarrativeQuestion {
@@ -29,6 +31,18 @@ export interface NarrativeQuestion {
   ideal_answer: string;
   question_order: number;
   marks?: number;
+}
+
+export interface FlowChartExercise {
+  options: string[];
+  sections: FlowChartSection[];
+}
+
+export interface FlowChartSection {
+  id: number;
+  name: string;
+  paragraphs: string;
+  correct_answer?: string;
 }
 
 export interface NonNarrativeExercise {

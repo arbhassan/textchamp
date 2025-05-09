@@ -299,8 +299,17 @@ export default function FullComprehensionPractice() {
         } else {
           setNarrativeExercise(narrativeData)
           
-          // Initialize answers state based on the narrative questions
-          if (narrativeData.questions && narrativeData.questions.length > 0) {
+          // Initialize answers state based on the narrative exercise type
+          if (narrativeData.exercise_type === "flowchart" && narrativeData.flowchart) {
+            // Initialize answers for flowchart exercise
+            const initialAnswersB = narrativeData.flowchart.sections.reduce((acc, section, idx) => {
+              acc[section.id || `section-${idx}`] = ""
+              return acc
+            }, {})
+            
+            setAnswersB(initialAnswersB)
+          } else if (narrativeData.questions && narrativeData.questions.length > 0) {
+            // Initialize answers for question-type exercise
             const initialAnswersB = narrativeData.questions.reduce((acc, question, index) => {
               // Use index+1 as the key to match the original structure (1, 2, 3)
               acc[index + 1] = ""
@@ -751,13 +760,31 @@ export default function FullComprehensionPractice() {
       // Use the story text from the Supabase data or fall back to the content in sectionContent
       const storyText = narrativeExercise?.story_text || sectionContent.B.content
       
-      const questionsWithAnswers: QuestionWithAnswer[] = Object.values(questionsB).map(q => ({
-        question: q.text,
-        idealAnswer: q.answer,
-        userAnswer: answersB[q.id] || ""
-      }))
-
-      const result = await evaluateAnswers(storyText, questionsWithAnswers)
+      let result;
+      
+      if (narrativeExercise?.exercise_type === "flowchart" && narrativeExercise?.flowchart) {
+        // For flowchart exercises, we create a different evaluation
+        // Convert flowchart answers to QuestionWithAnswer format for the evaluator
+        const questionsWithAnswers: QuestionWithAnswer[] = narrativeExercise.flowchart.sections.map((section, idx) => {
+          const sectionKey = section.id || `section-${idx}`;
+          return {
+            question: `${section.name}: Word that best describes this section`,
+            idealAnswer: section.correct_answer || narrativeExercise.flowchart.options[0], // Fallback to first option if no correct answer
+            userAnswer: answersB[sectionKey] || ""
+          };
+        });
+        
+        result = await evaluateAnswers(storyText, questionsWithAnswers);
+      } else {
+        // Regular question-based evaluation
+        const questionsWithAnswers: QuestionWithAnswer[] = Object.values(questionsB).map(q => ({
+          question: q.text,
+          idealAnswer: q.answer,
+          userAnswer: answersB[q.id] || ""
+        }));
+        
+        result = await evaluateAnswers(storyText, questionsWithAnswers);
+      }
       
       if (result && result.feedback) {
         // Ensure score is properly converted to a number
@@ -824,25 +851,57 @@ export default function FullComprehensionPractice() {
         // Save all progress data including questions and feedback
         saveProgress()
         
-        // Mark session as completed
+        // Update saved session status to completed if needed
         try {
-          // Update the recent sessions list to mark this session as completed
-          const recentSessionsStr = localStorage.getItem('recentSessions')
+          // Check if this session exists in recent sessions
+          const recentSessionsStr = localStorage.getItem('recentSessions');
           if (recentSessionsStr) {
-            const recentSessions = JSON.parse(recentSessionsStr)
+            const recentSessions = JSON.parse(recentSessionsStr);
+            let hasFullPracticeSession = false;
+            
             const updatedRecentSessions = recentSessions.map(session => {
               if (session.id === 'fullPractice') {
+                hasFullPracticeSession = true;
                 return {
                   ...session,
                   progress: 100,
                   lastSaved: new Date().toISOString(),
                   status: "completed"
-                }
+                };
               }
-              return session
-            })
-            localStorage.setItem('recentSessions', JSON.stringify(updatedRecentSessions))
+              return session;
+            });
+            
+            // If the session wasn't found, add it
+            if (!hasFullPracticeSession) {
+              updatedRecentSessions.unshift({
+                id: 'fullPractice',
+                section: "Full",
+                name: "Full Comprehension Practice",
+                progress: 100,
+                lastSaved: new Date().toISOString(),
+                status: "completed"
+              });
+            }
+            
+            localStorage.setItem('recentSessions', JSON.stringify(updatedRecentSessions));
+          } else {
+            // If no recent sessions exist, create one
+            const newSession = {
+              id: 'fullPractice',
+              section: "Full",
+              name: "Full Comprehension Practice",
+              progress: 100,
+              lastSaved: new Date().toISOString(),
+              status: "completed"
+            };
+            localStorage.setItem('recentSessions', JSON.stringify([newSession]));
           }
+          
+          // Dispatch event immediately after updating the session status
+          setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('practiceComplete'));
+          }, 100);
           
           // Record completed practice
           const practiceResult = {
@@ -877,8 +936,10 @@ export default function FullComprehensionPractice() {
           // Save to localStorage
           localStorage.setItem('practiceResults', JSON.stringify(updatedResults))
           
-          // Dispatch event to notify other components that a practice is complete
-          window.dispatchEvent(new CustomEvent('practiceComplete'))
+          // Dispatch another event to notify about practice results update
+          setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('practiceComplete'))
+          }, 200)
           
           // Redirect to feedback page
           router.push('/fullpractice/feedback')
@@ -978,21 +1039,30 @@ export default function FullComprehensionPractice() {
       
       setNarrativeExercise(selectedExercise)
       
-      // Reset answers and initialize based on the new questions
-      if (selectedExercise.questions && selectedExercise.questions.length > 0) {
+      // Reset answers and initialize based on the exercise type
+      if (selectedExercise.exercise_type === "flowchart" && selectedExercise.flowchart) {
+        // Initialize answers for flowchart exercise
+        const initialAnswersB = selectedExercise.flowchart.sections.reduce((acc, section, idx) => {
+          acc[section.id || `section-${idx}`] = ""
+          return acc
+        }, {})
+        
+        setAnswersB(initialAnswersB)
+      } else if (selectedExercise.questions && selectedExercise.questions.length > 0) {
+        // Initialize answers for question-type exercise
         const initialAnswersB = selectedExercise.questions.reduce((acc, question, index) => {
           acc[index + 1] = ""
           return acc
         }, {})
         
         setAnswersB(initialAnswersB)
-        
-        // Reset section score
-        setSectionScores(prev => ({
-          ...prev,
-          B: null
-        }))
       }
+      
+      // Reset section score
+      setSectionScores(prev => ({
+        ...prev,
+        B: null
+      }))
     } catch (error) {
       console.error('Error changing narrative exercise:', error)
     } finally {
@@ -1231,28 +1301,93 @@ export default function FullComprehensionPractice() {
                 
                 {currentSection === "B" && (
                   <>
-                    {/* Section B Questions */}
-                    {Object.values(questionsB).map(question => (
-                      <div key={question.id} className="bg-white rounded-2xl shadow-sm p-6">
-                        <div className="flex items-center gap-4 mb-4">
-                          <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium text-sm">
-                            {question.id}
+                    {/* Section B - Either Questions or Flowchart based on exercise_type */}
+                    {narrativeExercise?.exercise_type === "flowchart" && narrativeExercise?.flowchart ? (
+                      <div className="bg-white rounded-2xl shadow-sm p-6">
+                        <div className="flex justify-between items-center mb-4">
+                          <div className="flex items-center">
+                            <span className="flex items-center justify-center w-6 h-6 bg-amber-100 text-amber-800 rounded-full mr-2">1</span>
+                            <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">Flow Chart</span>
                           </div>
-                          <h2 className="text-lg font-medium text-gray-800 flex-1">{question.text}</h2>
-                          <div className="text-sm text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded-md whitespace-nowrap">
-                            {question.marks || 1} {(question.marks || 1) === 1 ? 'mark' : 'marks'}
+                          <button className="text-gray-400 hover:text-gray-600">
+                            <HelpCircle size={18} />
+                          </button>
+                        </div>
+                        
+                        <p className="mb-6 text-gray-700">
+                          {narrativeExercise.description || "Complete the flowchart by choosing one word from the box to summarise the main thoughts or feelings presented in each part of the text."}
+                        </p>
+                        
+                        {/* Options grid */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-6">
+                          {narrativeExercise.flowchart.options.map((option, index) => (
+                            <div 
+                              key={`flowchart-option-${index}`} 
+                              className={`p-2 border rounded-md text-center text-gray-800 ${
+                                index >= narrativeExercise.flowchart.options.length - 2 ? 'col-span-1 sm:col-span-2' : ''
+                              }`}
+                            >
+                              {option}
+                            </div>
+                          ))}
+                        </div>
+                        
+                        {/* Flow chart sections */}
+                        {narrativeExercise.flowchart.sections.map((section, idx) => (
+                          <div key={`flowchart-section-${section.id || idx}`} className="mb-8">
+                            <div className="mb-1 font-medium text-gray-800">
+                              {section.name}: ({String.fromCharCode(105 + idx)})
+                            </div>
+                            <input 
+                              type="text" 
+                              className="w-full p-2 border rounded-md text-gray-800"
+                              placeholder="Enter word here"
+                              value={answersB[section.id || `section-${idx}`] || ''}
+                              onChange={(e) => {
+                                // Use a unique identifier for each section
+                                const sectionKey = section.id || `section-${idx}`;
+                                setAnswersB(prev => ({
+                                  ...prev,
+                                  [sectionKey]: e.target.value
+                                }));
+                              }}
+                            />
+                            
+                            {/* Add arrow between sections except after the last one */}
+                            {idx < narrativeExercise.flowchart.sections.length - 1 && (
+                              <div className="flex justify-center my-4">
+                                <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path>
+                                </svg>
+                              </div>
+                            )}
                           </div>
-                        </div>
-                        <div>
-                          <textarea
-                            className="w-full h-24 p-4 border border-gray-200 text-gray-700 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            placeholder="Type your answer here..."
-                            value={answersB[question.id]}
-                            onChange={(e) => handleAnswerChangeB(question.id, e.target.value)}
-                          />
-                        </div>
+                        ))}
                       </div>
-                    ))}
+                    ) : (
+                      /* Original questions interface */
+                      Object.values(questionsB).map(question => (
+                        <div key={question.id} className="bg-white rounded-2xl shadow-sm p-6">
+                          <div className="flex items-center gap-4 mb-4">
+                            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium text-sm">
+                              {question.id}
+                            </div>
+                            <h2 className="text-lg font-medium text-gray-800 flex-1">{question.text}</h2>
+                            <div className="text-sm text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded-md whitespace-nowrap">
+                              {question.marks || 1} {(question.marks || 1) === 1 ? 'mark' : 'marks'}
+                            </div>
+                          </div>
+                          <div>
+                            <textarea
+                              className="w-full h-24 p-4 border border-gray-200 text-gray-700 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              placeholder="Type your answer here..."
+                              value={answersB[question.id]}
+                              onChange={(e) => handleAnswerChangeB(question.id, e.target.value)}
+                            />
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </>
                 )}
                 

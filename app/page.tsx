@@ -7,6 +7,9 @@ import { useTheme } from "next-themes"
 import { Header } from "@/components/header"
 import Link from "next/link"
 import { ExerciseReviewModal } from "@/components/exercise-review-modal"
+import { UserProfile } from "@/components/user-profile"
+import { useAuth } from "@/contexts/AuthContext"
+import LandingPage from "./landing"
 
 // Define the type for a practice result
 interface PracticeResult {
@@ -24,9 +27,39 @@ interface SavedSession {
   progress: number;
   lastSaved: string;
   status?: "completed" | "in-progress"; // optional status field with union type
+  _key?: string; // optional unique key for React rendering
 }
 
-export default function Dashboard() {
+export default function Home() {
+  const { user, isLoading } = useAuth()
+  
+  // For debugging, show auth status directly
+  useEffect(() => {
+    console.log("Home page - auth state:", user ? "Authenticated" : "Not authenticated")
+    if (user) {
+      console.log("User:", user.email)
+    }
+  }, [user])
+  
+  // If still loading auth state, show nothing to prevent flashing
+  if (isLoading) {
+    return <div className="min-h-screen bg-background flex items-center justify-center">
+      <p className="text-lg">Loading authentication...</p>
+    </div>
+  }
+  
+  // If user is not authenticated, show landing page
+  if (!user) {
+    console.log("Home: User not authenticated, showing landing page")
+    return <LandingPage />
+  }
+  
+  // Otherwise, show the Dashboard
+  console.log("Home: User authenticated, showing dashboard")
+  return <Dashboard />
+}
+
+function Dashboard() {
   const { theme, setTheme } = useTheme()
   const [practiceResults, setPracticeResults] = useState<PracticeResult[]>([])
   const [recentSessions, setRecentSessions] = useState<SavedSession[]>([])
@@ -42,11 +75,29 @@ export default function Dashboard() {
   const [selectedSession, setSelectedSession] = useState<SavedSession | null>(null)
   
   useEffect(() => {
-    // Load practice results from localStorage
+    // Load practice results and recent sessions from localStorage
     const loadResults = () => {
       try {
+        console.log('Loading dashboard data from localStorage')
+        
+        // Debug: Print all localStorage keys and values
+        console.log('All localStorage keys:')
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i)
+          if (key) {
+            try {
+              const value = localStorage.getItem(key)
+              console.log(`Key: ${key}, Value length: ${value?.length || 0}`)
+            } catch (e) {
+              console.error(`Error reading key ${key}:`, e)
+            }
+          }
+        }
+        
+        // Load practice results
         const storedResults = localStorage.getItem('practiceResults')
         const results: PracticeResult[] = storedResults ? JSON.parse(storedResults) : []
+        console.log('Practice results:', results)
         setPracticeResults(results)
         
         // Calculate completed practices
@@ -93,12 +144,247 @@ export default function Dashboard() {
           })
         }
         
-        // Load recent sessions
-        const recentSessionsStr = localStorage.getItem('recentSessions')
-        if (recentSessionsStr) {
-          const sessions: SavedSession[] = JSON.parse(recentSessionsStr)
-          setRecentSessions(sessions)
+        // Load all recent sessions
+        console.log('Loading all session types')
+        const allSessions: SavedSession[] = []
+        const sessionMap = new Map<string, SavedSession>() // Track sessions by ID
+        
+        // Use numeric prefixes to ensure uniqueness
+        let uniqueCounter = 1
+        
+        // Helper function to determine if a session should replace an existing one
+        const shouldReplaceExistingSession = (existing: SavedSession, newSession: SavedSession): boolean => {
+          // Always prefer completed sessions over in-progress ones
+          if (newSession.status === "completed" && existing.status !== "completed") {
+            return true
+          }
+          // For same status, prefer the more recently updated one
+          if (newSession.status === existing.status) {
+            return new Date(newSession.lastSaved).getTime() > new Date(existing.lastSaved).getTime()
+          }
+          return false
         }
+        
+        // Helper function to add or update a session
+        const addOrUpdateSession = (session: SavedSession, idPrefix: string) => {
+          if (!session || typeof session !== 'object') return
+          
+          // Ensure session has all required fields
+          const isStandardSection = ['sectionA', 'sectionB', 'sectionC'].includes(session.id)
+          
+          // For standard sections (A, B, C), use the section ID as the map key
+          // For others (like fullPractice), use their unique ID directly
+          const mapKey = isStandardSection ? session.id : session.id
+          
+          // Check if we already have this session
+          if (sessionMap.has(mapKey)) {
+            const existingSession = sessionMap.get(mapKey)!
+            
+            // Only replace if the new session is "better" (completed or more recent)
+            if (shouldReplaceExistingSession(existingSession, session)) {
+              // Use the existing _key to maintain React stability
+              session._key = existingSession._key
+              sessionMap.set(mapKey, session)
+            }
+          } else {
+            // This is a new session, add it
+            session._key = `${idPrefix}_${uniqueCounter++}`
+            sessionMap.set(mapKey, session)
+          }
+        }
+        
+        // Load full practice sessions
+        const fullPracticeSessionsStr = localStorage.getItem('recentSessions')
+        if (fullPracticeSessionsStr) {
+          try {
+            const parsedData = JSON.parse(fullPracticeSessionsStr)
+            console.log('Parsed recentSessions:', parsedData)
+            
+            // Handle both array and single object formats
+            const sessions = Array.isArray(parsedData) ? parsedData : [parsedData]
+            
+            // Make sure each session has the required fields
+            sessions.forEach(session => {
+              if (session) {
+                // Generate a unique ID if none exists
+                session.id = session.id || `fullPractice_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+                session.section = session.section || 'Full'
+                session.name = session.name || 'Full Comprehension Practice'
+                addOrUpdateSession(session, 'fullPractice')
+              }
+            })
+          } catch (error) {
+            console.error("Error parsing Full Practice sessions:", error)
+          }
+        }
+        
+        // Load section A sessions - check both possible key formats
+        const sectionASessionsStr = localStorage.getItem('savedSession_sectionA') || localStorage.getItem('savedSession_A')
+        if (sectionASessionsStr) {
+          try {
+            const sessionA: SavedSession = JSON.parse(sectionASessionsStr)
+            // Ensure session has required fields
+            if (sessionA && typeof sessionA === 'object') {
+              sessionA.id = 'sectionA'  // Ensure correct ID for routing
+              sessionA.section = 'A'    // Add section identifier if not present
+              sessionA.name = sessionA.name || 'Section A - Visual Text'
+              
+              // Check if we have a completed practice result for this section
+              const hasCompletedResult = results.some(result => 
+                result.section === 'A' && result.score !== undefined
+              );
+              
+              // If we have a score/feedback, it means the session is completed
+              if (hasCompletedResult || sessionA.score !== undefined || sessionA.feedback) {
+                sessionA.status = "completed";
+                console.log('Section A marked as completed');
+              }
+              
+              // Add unique key using counter
+              sessionA._key = `sectionA_${uniqueCounter++}`
+              addOrUpdateSession(sessionA, 'sectionA')
+            }
+          } catch (error) {
+            console.error("Error parsing Section A session:", error)
+          }
+        }
+        
+        // Load section B sessions
+        const sectionBSessionsStr = localStorage.getItem('savedSession_sectionB') || localStorage.getItem('savedSession_B')
+        if (sectionBSessionsStr) {
+          try {
+            console.log('Raw Section B data:', sectionBSessionsStr)
+            const sessionB: SavedSession = JSON.parse(sectionBSessionsStr)
+            console.log('Parsed Section B data:', sessionB)
+            // Ensure session has required fields
+            if (sessionB && typeof sessionB === 'object') {
+              console.log('Before ID assignment:', sessionB.id)
+              sessionB.id = 'sectionB'  // Ensure correct ID for routing
+              console.log('After ID assignment:', sessionB.id)
+              sessionB.section = 'B'    // Add section identifier if not present
+              sessionB.name = sessionB.name || 'Section B - Narrative'
+              
+              // Check if we have a completed practice result for this section
+              const hasCompletedResult = results.some(result => 
+                result.section === 'B' && result.score !== undefined
+              );
+              
+              // If we have a score/feedback, it means the session is completed
+              if (hasCompletedResult || sessionB.score !== undefined || sessionB.feedback) {
+                sessionB.status = "completed";
+                console.log('Section B marked as completed');
+              }
+              
+              // Add unique key using counter
+              sessionB._key = `sectionB_${uniqueCounter++}`
+              addOrUpdateSession(sessionB, 'sectionB')
+              console.log('After adding Section B:', sessionMap)
+            }
+          } catch (error) {
+            console.error("Error parsing Section B session:", error)
+          }
+        }
+        
+        // Load section C sessions
+        const sectionCSessionsStr = localStorage.getItem('savedSession_sectionC') || localStorage.getItem('savedSession_C')
+        if (sectionCSessionsStr) {
+          try {
+            const sessionC: SavedSession = JSON.parse(sectionCSessionsStr)
+            // Ensure session has required fields
+            if (sessionC && typeof sessionC === 'object') {
+              sessionC.id = 'sectionC'  // Ensure correct ID for routing
+              sessionC.section = 'C'    // Add section identifier if not present
+              sessionC.name = sessionC.name || 'Section C - Non-Narrative'
+              
+              // Check if we have a completed practice result for this section
+              const hasCompletedResult = results.some(result => 
+                result.section === 'C' && result.score !== undefined
+              );
+              
+              // If we have a score/feedback, it means the session is completed
+              if (hasCompletedResult || sessionC.score !== undefined || sessionC.feedback) {
+                sessionC.status = "completed";
+                console.log('Section C marked as completed');
+              }
+              
+              // Add unique key using counter
+              sessionC._key = `sectionC_${uniqueCounter++}`
+              addOrUpdateSession(sessionC, 'sectionC')
+            }
+          } catch (error) {
+            console.error("Error parsing Section C session:", error)
+          }
+        }
+        
+        // Convert the Map values to array for the state
+        const uniqueSessions = Array.from(sessionMap.values())
+        
+        console.log('Unique sessions loaded:', uniqueSessions.length, uniqueSessions)
+        
+        // Extract section information from practice results to identify completed sections
+        const completedSectionIds = new Set(
+          results.map(result => {
+            if (result.section === 'A') return 'sectionA'
+            if (result.section === 'B') return 'sectionB'
+            if (result.section === 'C') return 'sectionC'
+            return null
+          }).filter(Boolean)
+        )
+        
+        console.log('Completed section IDs:', Array.from(completedSectionIds))
+        
+        // Filter out sessions that have corresponding completed practice results
+        const filteredSessions = uniqueSessions.filter(session => {
+          // Create a potential ID based on section if id doesn't exist
+          const effectiveId = session.id || (session.section ? `section${session.section}` : null);
+          
+          // If this is a session with a corresponding completed practice result,
+          // only keep it if it has a "completed" status (to avoid duplicate in-progress sessions)
+          console.log('Filtering session:', effectiveId, session.section, session.name, 
+                     'Is in completedSectionIds?', completedSectionIds.has(effectiveId));
+          
+          if (effectiveId && completedSectionIds.has(effectiveId)) {
+            console.log('Session has completed practice result, status is:', session.status)
+            return session.status === "completed"
+          }
+          return true
+        })
+        
+        console.log('After filtering for completed sections:', filteredSessions.length, filteredSessions)
+        
+        // Final deduplication step - ensure we never show duplicates of the same section
+        // BUT we should still show multiple entries if they're for different sections
+        const seenSectionIds = new Set<string>()
+        const finalSessions = filteredSessions.filter(session => {
+          // Get effective ID for this session (either id or derived from section)
+          const effectiveId = session.id || (session.section ? `section${session.section}` : null);
+          
+          // For standard sections (A, B, C), deduplicate by section ID
+          if (effectiveId && ['sectionA', 'sectionB', 'sectionC'].includes(effectiveId)) {
+            if (seenSectionIds.has(effectiveId)) {
+              return false // Skip, we already have a session for this section
+            }
+            seenSectionIds.add(effectiveId)
+            return true
+          }
+          
+          // For full practice sessions, always show them as they have unique IDs
+          if (session.id?.startsWith('fullPractice') || session.section === 'Full') {
+            return true
+          }
+          
+          // For other session types (like ones with unique IDs), always include them
+          return true
+        })
+        
+        console.log('After final deduplication, sessions:', finalSessions.length, finalSessions)
+        
+        // Sort sessions by last saved date (newest first)
+        const sortedSessions = finalSessions.sort((a, b) => 
+          new Date(b.lastSaved).getTime() - new Date(a.lastSaved).getTime()
+        )
+        
+        setRecentSessions(sortedSessions)
       } catch (error) {
         console.error("Error loading data:", error)
       }
@@ -106,7 +392,14 @@ export default function Dashboard() {
     
     // Set up event listener for storage changes
     const handleStorageChange = (e) => {
-      if (e.key === 'practiceResults' || e.key === 'recentSessions') {
+      if (e.key === 'practiceResults' || 
+          e.key === 'recentSessions' || 
+          e.key === 'savedSession_sectionA' ||
+          e.key === 'savedSession_A' ||
+          e.key === 'savedSession_sectionB' ||
+          e.key === 'savedSession_B' ||
+          e.key === 'savedSession_sectionC' ||
+          e.key === 'savedSession_C') {
         loadResults()
       }
     }
@@ -119,7 +412,11 @@ export default function Dashboard() {
     
     // Add event listener for custom event from the section pages
     const handlePracticeComplete = (e: CustomEvent) => {
-      loadResults()
+      console.log('Practice complete event received, reloading data')
+      // Add a small delay to ensure localStorage is fully updated
+      setTimeout(() => {
+        loadResults()
+      }, 100)
     }
     
     window.addEventListener('practiceComplete', handlePracticeComplete as EventListener)
@@ -199,6 +496,26 @@ export default function Dashboard() {
       setSelectedSession(session)
       setShowReviewModal(true)
     }
+  }
+  
+  // Function to get session card background color based on section
+  const getSessionCardStyle = (sessionId: string) => {
+    if (sessionId === 'sectionA') return 'bg-amber-50/50 dark:bg-amber-950/20'
+    if (sessionId === 'sectionB') return 'bg-orange-50/50 dark:bg-orange-950/20'
+    if (sessionId === 'sectionC') return 'bg-purple-50/50 dark:bg-purple-950/20'
+    return '' // Default for full practice
+  }
+  
+  // Function to get the section name based on ID
+  const getSectionDisplayName = (sessionId: string, name?: string) => {
+    // If a name is provided, use it
+    if (name) return name
+    
+    // Otherwise provide a default name
+    if (sessionId === 'sectionA') return 'Section A - Visual Text'
+    if (sessionId === 'sectionB') return 'Section B - Narrative'
+    if (sessionId === 'sectionC') return 'Section C - Non-Narrative'
+    return 'Full Practice'
   }
 
   return (
@@ -341,7 +658,6 @@ export default function Dashboard() {
                 </div>
                 <h3 className="text-lg font-bold text-amber-800 dark:text-amber-200 mb-2">Section A</h3>
                 <p className="text-amber-700 dark:text-amber-300 mb-4">Interpret posters, ads & infographics</p>
-                <p className="text-amber-600 dark:text-amber-400 text-sm">5 marks</p>
                 <div className="mt-4">
                   <Link 
                     href="/visualtextcomp" 
@@ -383,7 +699,6 @@ export default function Dashboard() {
                 </div>
                 <h3 className="text-lg font-bold text-orange-800 dark:text-orange-200 mb-2">Section B</h3>
                 <p className="text-orange-700 dark:text-orange-300 mb-4">Practice story-based questions</p>
-                <p className="text-orange-600 dark:text-orange-400 text-sm">20 marks</p>
                 <div className="mt-4">
                   <Link 
                     href="/narratcomp" 
@@ -425,7 +740,6 @@ export default function Dashboard() {
                 </div>
                 <h3 className="text-lg font-bold text-purple-800 dark:text-purple-200 mb-2">Section C</h3>
                 <p className="text-purple-700 dark:text-purple-300 mb-4">Answer non-fiction + summary writing</p>
-                <p className="text-purple-600 dark:text-purple-400 text-sm">25 marks</p>
                 <div className="mt-4">
                   <Link 
                     href="/nonnarratcomp" 
@@ -452,56 +766,112 @@ export default function Dashboard() {
 
         {/* Recent Sessions */}
         <div className="mb-12">
-          <h2 className="text-xl font-bold text-foreground mb-6">Recent Sessions</h2>
+          <h2 className="text-xl font-bold text-foreground mb-6">Practice Activity</h2>
+          
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {recentSessions.length > 0 ? (
-              recentSessions.map((session) => (
-                <Link 
-                  href={getSessionUrl(session.id)} 
-                  key={session.id} 
-                  title={session.status === "completed" ? "View this completed session" : "Continue this session"}
-                  className={`block ${session.status === "completed" ? "cursor-pointer" : ""}`}
-                  onClick={session.status === "completed" ? (e) => handleShowReview(session, e) : undefined}
-                >
-                  <Card className={`shadow-sm ${session.status === "completed" ? "opacity-95" : "hover:shadow-md transition-shadow"}`}>
-                    <CardContent className="p-6">
-                      <div className="flex justify-between items-start mb-4">
-                        <div className="flex items-center gap-2">
-                          {session.status === "completed" ? (
-                            <>
-                              <div className="bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 p-1 rounded-md">
-                                <CheckCircle size={16} />
-                              </div>
-                              <span className="text-sm text-green-600 dark:text-green-400 font-medium">Completed</span>
-                            </>
-                          ) : (
-                            <>
-                              <div className="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 p-1 rounded-md">
-                                <Clock3 size={16} />
-                              </div>
-                              <span className="text-sm text-blue-600 dark:text-blue-400 font-medium">In Progress</span>
-                            </>
+            {/* Combined Results and Sessions */}
+            {practiceResults.length > 0 || recentSessions.length > 0 ? (
+              <>
+                {/* Practice Results */}
+                {practiceResults.map((result, index) => {
+                  // Get section ID from section letter
+                  const sectionId = result.section === 'A' 
+                    ? 'sectionA' 
+                    : result.section === 'B'
+                      ? 'sectionB'
+                      : result.section === 'C'
+                        ? 'sectionC'
+                        : null;
+                        
+                  // Check if there's a corresponding completed session
+                  const hasCompletedSession = sectionId && 
+                    recentSessions.some(s => s.id === sectionId && s.status === "completed");
+                    
+                  // Only show this result if there's no corresponding completed session
+                  if (hasCompletedSession) return null;
+                  
+                  // For logging, track which results we're displaying
+                  console.log('Displaying practice result:', result.name, result.section);
+                  
+                  return (
+                    <Card key={`result_${index}`} className="shadow-sm">
+                      <CardContent className="p-6">
+                        <div className="flex justify-between items-start mb-4">
+                          <div className="flex items-center gap-2">
+                            <div className="bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 p-1 rounded-md">
+                              <CheckCircle size={16} />
+                            </div>
+                            <span className="text-sm text-green-600 dark:text-green-400 font-medium">Completed</span>
+                          </div>
+                          <div className="font-medium">
+                            Score: {result.score}
+                          </div>
+                        </div>
+                        <h3 className="text-lg font-bold text-foreground mb-1">{result.name}</h3>
+                        <p className="text-muted-foreground">Completed {formatDate(result.completedAt)}</p>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+                
+                {/* Saved Sessions */}
+                {recentSessions.map((session) => {
+                  // For logging, track which sessions we're displaying
+                  console.log('Displaying session:', session.name, session.id, session.status);
+                  
+                  return (
+                    <Link 
+                      href={getSessionUrl(session.id)} 
+                      key={session._key || session.id} 
+                      title={session.status === "completed" ? "View this completed session" : "Continue this session"}
+                      className={`block ${session.status === "completed" ? "cursor-pointer" : ""}`}
+                      onClick={session.status === "completed" ? (e) => handleShowReview(session, e) : undefined}
+                    >
+                      <Card className={`shadow-sm ${getSessionCardStyle(session.id)} ${session.status === "completed" ? "opacity-95" : "hover:shadow-md transition-shadow"}`}>
+                        <CardContent className="p-6">
+                          <div className="flex justify-between items-start mb-4">
+                            <div className="flex items-center gap-2">
+                              {session.status === "completed" ? (
+                                <>
+                                  <div className="bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 p-1 rounded-md">
+                                    <CheckCircle size={16} />
+                                  </div>
+                                  <span className="text-sm text-green-600 dark:text-green-400 font-medium">Completed</span>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 p-1 rounded-md">
+                                    <Clock3 size={16} />
+                                  </div>
+                                  <span className="text-sm text-blue-600 dark:text-blue-400 font-medium">In Progress</span>
+                                </>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="font-medium">
+                                {session.status === "completed" ? 
+                                  "100% Complete" : 
+                                  `${Math.round(session.progress || 0)}% Complete`}
+                              </span>
+                            </div>
+                          </div>
+                          <h3 className="text-lg font-bold text-foreground mb-1">{getSectionDisplayName(session.id, session.name)}</h3>
+                          <p className="text-muted-foreground">Last saved {formatDate(session.lastSaved)}</p>
+                          {session.status === "completed" && (
+                            <div className="flex items-center gap-1 mt-2 text-sm text-blue-600 dark:text-blue-400">
+                              <Eye size={14} />
+                              <span>View Review</span>
+                            </div>
                           )}
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <span className="font-medium">{Math.round(session.progress)}% Complete</span>
-                        </div>
-                      </div>
-                      <h3 className="text-lg font-bold text-foreground mb-1">{session.name}</h3>
-                      <p className="text-muted-foreground">Last saved {formatDate(session.lastSaved)}</p>
-                      {session.status === "completed" && (
-                        <div className="flex items-center gap-1 mt-2 text-sm text-blue-600 dark:text-blue-400">
-                          <Eye size={14} />
-                          <span>View Review</span>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                </Link>
-              ))
+                        </CardContent>
+                      </Card>
+                    </Link>
+                  );
+                })}
+              </>
             ) : (
               <div className="col-span-2 text-center p-6 bg-gray-50 dark:bg-gray-800/20 rounded-lg">
-                <p className="text-muted-foreground">No saved sessions found. Start a practice and use the save button to track your progress.</p>
+                <p className="text-muted-foreground">No practice activity found. Start a practice and use the save button to track your progress.</p>
               </div>
             )}
           </div>

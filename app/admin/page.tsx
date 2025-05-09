@@ -71,11 +71,13 @@ export default function AdminPanel() {
     story_text: string;
     description: string;
     time_limit: number;
+    exercise_type: "questions" | "flowchart";
   }>({
     title: "",
     story_text: "",
     description: "",
-    time_limit: 1800 // Default 30 minutes
+    time_limit: 1800, // Default 30 minutes
+    exercise_type: "questions" // Default to questions type
   })
 
   // Form states for questions
@@ -98,6 +100,21 @@ export default function AdminPanel() {
     marks?: number;
     isNew?: boolean;
   }[]>([])
+
+  // Form states for flowchart (when exercise_type is flowchart)
+  const [formFlowchart, setFormFlowchart] = useState<{
+    options: string[];
+    sections: {
+      id: number;
+      name: string;
+      paragraphs: string;
+      correct_answer?: string;
+      isNew?: boolean;
+    }[];
+  }>({
+    options: [],
+    sections: []
+  })
 
   // Form states for non-narrative exercise
   const [formNonNarrativeExercise, setFormNonNarrativeExercise] = useState<{
@@ -650,7 +667,8 @@ export default function AdminPanel() {
       title: "New Narrative Exercise",
       story_text: "",
       description: "",
-      time_limit: 1800 // Default 30 minutes
+      time_limit: 1800, // Default 30 minutes
+      exercise_type: "questions" // Default to questions type
     });
     
     // Initialize with one empty question
@@ -665,6 +683,19 @@ export default function AdminPanel() {
       }
     ]);
     
+    // Initialize with empty flowchart
+    setFormFlowchart({
+      options: ["Option 1", "Option 2", "Option 3", "Option 4", "Option 5", "Option 6", "Option 7"],
+      sections: [
+        {
+          id: Date.now(),
+          name: "Paragraphs 1-2",
+          paragraphs: "1-2",
+          isNew: true
+        }
+      ]
+    });
+    
     setIsEditingNarrative(true);
   };
 
@@ -676,22 +707,35 @@ export default function AdminPanel() {
       title: exercise.title,
       story_text: exercise.story_text,
       description: exercise.description || "",
-      time_limit: exercise.time_limit || 1800 // Default 30 minutes
-    })
+      time_limit: exercise.time_limit || 1800, // Default 30 minutes
+      exercise_type: exercise.exercise_type || "questions" // Default to questions type if not specified
+    });
     
-    // Format questions for form
-    const questionsForForm = exercise.questions.map(q => ({
-      id: q.id,
-      question_text: q.question_text,
-      ideal_answer: q.ideal_answer,
-      question_order: q.question_order,
-      marks: q.marks || 1,
-      isNew: false
-    }))
+    if (exercise.exercise_type === "flowchart" && exercise.flowchart) {
+      // Format flowchart for form
+      setFormFlowchart({
+        options: exercise.flowchart.options,
+        sections: exercise.flowchart.sections.map(s => ({
+          ...s,
+          isNew: false
+        }))
+      });
+    } else {
+      // Format questions for form
+      const questionsForForm = (exercise.questions || []).map(q => ({
+        id: q.id,
+        question_text: q.question_text,
+        ideal_answer: q.ideal_answer,
+        question_order: q.question_order,
+        marks: q.marks || 1,
+        isNew: false
+      }));
+      
+      setFormNarrativeQuestions(questionsForForm);
+    }
     
-    setFormNarrativeQuestions(questionsForForm)
-    setSelectedNarrativeExercise(exercise)
-    setIsEditingNarrative(true)
+    setSelectedNarrativeExercise(exercise);
+    setIsEditingNarrative(true);
   }
 
   // Handle adding a question to narrative exercise
@@ -765,19 +809,58 @@ export default function AdminPanel() {
         return;
       }
 
-      if (formNarrativeQuestions.length === 0) {
-        setMessage({ text: "At least one question is required", type: "error" });
-        return;
+      if (formNarrativeExercise.exercise_type === "questions") {
+        if (formNarrativeQuestions.length === 0) {
+          setMessage({ text: "At least one question is required", type: "error" });
+          return;
+        }
+      } else if (formNarrativeExercise.exercise_type === "flowchart") {
+        if (formFlowchart.sections.length === 0) {
+          setMessage({ text: "At least one flowchart section is required", type: "error" });
+          return;
+        }
+        
+        if (formFlowchart.options.length === 0) {
+          setMessage({ text: "At least one option is required", type: "error" });
+          return;
+        }
       }
       
-      // Prepare questions with correct format
-      const questionsToSave = formNarrativeQuestions.map(q => ({
-        id: q.isNew ? undefined : q.id,
-        question_text: q.question_text,
-        ideal_answer: q.ideal_answer,
-        question_order: q.question_order,
-        marks: q.marks || 1
-      }));
+      // Prepare data based on exercise type
+      let exerciseData: any = {
+        title: formNarrativeExercise.title,
+        story_text: formNarrativeExercise.story_text,
+        description: formNarrativeExercise.description,
+        time_limit: formNarrativeExercise.time_limit,
+        exercise_type: formNarrativeExercise.exercise_type
+      };
+      
+      if (formNarrativeExercise.exercise_type === "questions") {
+        // Prepare questions with correct format
+        const questionsToSave = formNarrativeQuestions.map(q => ({
+          id: q.isNew ? undefined : q.id,
+          question_text: q.question_text,
+          ideal_answer: q.ideal_answer,
+          question_order: q.question_order,
+          marks: q.marks || 1
+        }));
+        
+        exerciseData.questions = questionsToSave;
+        
+      } else if (formNarrativeExercise.exercise_type === "flowchart") {
+        // Prepare flowchart data
+        const flowchartToSave = {
+          options: formFlowchart.options,
+          sections: formFlowchart.sections.map(s => ({
+            id: s.isNew ? undefined : s.id,
+            name: s.name,
+            paragraphs: s.paragraphs,
+            correct_answer: s.correct_answer
+          }))
+        };
+        
+        exerciseData.flowchart = flowchartToSave;
+      }
       
       const exerciseId = formNarrativeExercise.id;
       
@@ -785,13 +868,7 @@ export default function AdminPanel() {
         // Creating a new narrative exercise
         const { data: newExercise, error: insertError } = await supabase
           .from('narrative_exercises')
-          .insert({
-            title: formNarrativeExercise.title,
-            story_text: formNarrativeExercise.story_text,
-            description: formNarrativeExercise.description,
-            time_limit: formNarrativeExercise.time_limit,
-            questions: questionsToSave
-          })
+          .insert(exerciseData)
           .select('*')
           .single();
           
@@ -799,16 +876,10 @@ export default function AdminPanel() {
         
         setMessage({ text: "New narrative exercise created successfully", type: "success" });
       } else {
-        // Update existing exercise with questions
+        // Update existing exercise
         const { error } = await supabase
           .from('narrative_exercises')
-          .update({
-            title: formNarrativeExercise.title,
-            story_text: formNarrativeExercise.story_text,
-            description: formNarrativeExercise.description,
-            time_limit: formNarrativeExercise.time_limit,
-            questions: questionsToSave
-          })
+          .update(exerciseData)
           .eq('id', exerciseId);
 
         if (error) throw error;
@@ -1148,6 +1219,91 @@ export default function AdminPanel() {
       setLoading(false)
     }
   }
+
+  // Toggle exercise type between questions and flowchart
+  const toggleExerciseType = () => {
+    setFormNarrativeExercise(prev => ({
+      ...prev,
+      exercise_type: prev.exercise_type === "questions" ? "flowchart" : "questions"
+    }));
+  };
+
+  // Add a flowchart option
+  const handleAddFlowchartOption = () => {
+    setFormFlowchart(prev => ({
+      ...prev,
+      options: [...prev.options, `Option ${prev.options.length + 1}`]
+    }));
+  };
+
+  // Remove a flowchart option
+  const handleRemoveFlowchartOption = (index: number) => {
+    setFormFlowchart(prev => {
+      const updatedOptions = [...prev.options];
+      updatedOptions.splice(index, 1);
+      return {
+        ...prev,
+        options: updatedOptions
+      };
+    });
+  };
+
+  // Edit a flowchart option
+  const handleFlowchartOptionChange = (index: number, value: string) => {
+    setFormFlowchart(prev => {
+      const updatedOptions = [...prev.options];
+      updatedOptions[index] = value;
+      return {
+        ...prev,
+        options: updatedOptions
+      };
+    });
+  };
+
+  // Add a flowchart section
+  const handleAddFlowchartSection = () => {
+    const newOrder = formFlowchart.sections.length + 1;
+    
+    setFormFlowchart(prev => ({
+      ...prev,
+      sections: [
+        ...prev.sections,
+        {
+          id: Date.now(),
+          name: `Paragraphs ${newOrder}`,
+          paragraphs: `${newOrder}`,
+          isNew: true
+        }
+      ]
+    }));
+  };
+
+  // Remove a flowchart section
+  const handleRemoveFlowchartSection = (index: number) => {
+    setFormFlowchart(prev => {
+      const updatedSections = [...prev.sections];
+      updatedSections.splice(index, 1);
+      return {
+        ...prev,
+        sections: updatedSections
+      };
+    });
+  };
+
+  // Edit a flowchart section
+  const handleFlowchartSectionChange = (index: number, field: string, value: string) => {
+    setFormFlowchart(prev => {
+      const updatedSections = [...prev.sections];
+      updatedSections[index] = {
+        ...updatedSections[index],
+        [field]: value
+      };
+      return {
+        ...prev,
+        sections: updatedSections
+      };
+    });
+  };
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -1575,78 +1731,227 @@ export default function AdminPanel() {
                   </div>
                 </div>
                 
-                {/* Questions Section */}
-                <div className="mt-8">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-medium text-gray-900">Questions</h3>
-                    <button 
-                      onClick={handleAddNarrativeQuestion}
-                      className="bg-green-600 text-white px-3 py-1 rounded-md hover:bg-green-700 flex items-center text-sm"
+                {/* Add this after the story_text textarea in the narrative exercise form */}
+                <div className="mt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Exercise Type</label>
+                  <div className="flex space-x-4">
+                    <button
+                      type="button"
+                      onClick={() => setFormNarrativeExercise(prev => ({ ...prev, exercise_type: "questions" }))}
+                      className={`px-4 py-2 rounded-md ${
+                        formNarrativeExercise.exercise_type === "questions"
+                          ? "bg-blue-100 text-blue-700 border border-blue-300"
+                          : "bg-gray-100 text-gray-700 border border-gray-300"
+                      }`}
                     >
-                      <Plus size={16} className="mr-1" />
-                      Add Question
+                      Questions
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormNarrativeExercise(prev => ({ ...prev, exercise_type: "flowchart" }))}
+                      className={`px-4 py-2 rounded-md ${
+                        formNarrativeExercise.exercise_type === "flowchart"
+                          ? "bg-blue-100 text-blue-700 border border-blue-300"
+                          : "bg-gray-100 text-gray-700 border border-gray-300"
+                      }`}
+                    >
+                      Flow Chart
                     </button>
                   </div>
-                  
-                  <div className="space-y-6">
-                    {formNarrativeQuestions.map((question, index) => (
-                      <div key={index} className="p-6 bg-gray-50 rounded-lg mb-4">
-                        <div className="flex justify-between items-center mb-4">
-                          <h3 className="text-lg font-semibold text-gray-700">Question {index + 1}</h3>
-                          <div className="flex gap-2">
-                            
-                            <div className="flex items-center">
-                              <label className="text-sm text-gray-600 mr-2">Marks:</label>
-                              <input
-                                type="number"
-                                name="marks"
-                                value={question.marks || 1}
-                                onChange={(e) => handleNarrativeQuestionChange(index, e)}
-                                className="border p-2 w-16 text-gray-900 text-center rounded"
-                                min="1"
-                              />
-                            </div>
+                </div>
+                
+                {/* Replace the questions section with a conditional rendering based on exercise_type */}
+                {formNarrativeExercise.exercise_type === "questions" ? (
+                  <div className="mt-8">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-medium text-gray-900">Questions</h3>
+                      <button
+                        type="button"
+                        onClick={handleAddNarrativeQuestion}
+                        className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                      >
+                        <Plus size={16} className="mr-2" />
+                        Add Question
+                      </button>
+                    </div>
+                    
+                    {formNarrativeQuestions.length === 0 ? (
+                      <p className="text-gray-500 text-center py-4">No questions yet. Add some questions.</p>
+                    ) : (
+                      <div className="space-y-6">
+                        {formNarrativeQuestions.map((question, index) => (
+                          <div key={question.id} className="bg-gray-50 p-4 rounded-md border border-gray-200 relative">
                             <button
                               type="button"
                               onClick={() => handleRemoveNarrativeQuestion(index)}
-                              className="text-red-600 hover:text-red-800"
+                              className="absolute top-2 right-2 text-red-600 hover:text-red-800"
                             >
-                              Remove
+                              <Trash2 size={18} />
+                            </button>
+                            
+                            <div className="flex space-x-4 mb-4">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Order</label>
+                                <input
+                                  type="number"
+                                  name="question_order"
+                                  value={question.question_order}
+                                  onChange={(e) => handleNarrativeQuestionChange(index, e)}
+                                  className="w-16 border border-gray-300 rounded-md shadow-sm py-1 px-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                                />
+                              </div>
+                              
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Marks</label>
+                                <input
+                                  type="number"
+                                  name="marks"
+                                  value={question.marks}
+                                  onChange={(e) => handleNarrativeQuestionChange(index, e)}
+                                  className="w-16 border border-gray-300 rounded-md shadow-sm py-1 px-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                                />
+                              </div>
+                            </div>
+                            
+                            <div className="mb-3">
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Question Text</label>
+                              <textarea
+                                name="question_text"
+                                value={question.question_text}
+                                onChange={(e) => handleNarrativeQuestionChange(index, e)}
+                                rows={2}
+                                className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                                placeholder="Question text"
+                              />
+                            </div>
+                            
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Ideal Answer</label>
+                              <textarea
+                                name="ideal_answer"
+                                value={question.ideal_answer}
+                                onChange={(e) => handleNarrativeQuestionChange(index, e)}
+                                rows={3}
+                                className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                                placeholder="Ideal answer for this question"
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="mt-8">
+                    {/* Flowchart Options */}
+                    <div>
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-medium text-gray-900">Word Options</h3>
+                        <button
+                          type="button"
+                          onClick={handleAddFlowchartOption}
+                          className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        >
+                          <Plus size={16} className="mr-2" />
+                          Add Option
+                        </button>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-6">
+                        {formFlowchart.options.map((option, index) => (
+                          <div key={index} className="relative">
+                            <input
+                              type="text"
+                              value={option}
+                              onChange={(e) => handleFlowchartOptionChange(index, e.target.value)}
+                              className="w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 pr-8 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveFlowchartOption(index)}
+                              className="absolute right-2 top-1/2 transform -translate-y-1/2 text-red-500 hover:text-red-700"
+                            >
+                              <X size={16} />
                             </button>
                           </div>
-                        </div>
-                        <div>
-                          <label htmlFor={`question-text-${index}`} className="block text-sm font-medium text-gray-700">
-                            Question {index + 1}
-                          </label>
-                          <textarea
-                            type="text"
-                            name="question_text"
-                            id={`question-text-${index}`}
-                            value={question.question_text}
-                            onChange={(e) => handleNarrativeQuestionChange(index, e)}
-                            className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                            placeholder="Question text"
-                          />
-                        </div>
-                        <div>
-                          <label htmlFor={`ideal-answer-${index}`} className="block text-sm font-medium text-gray-700">
-                            Ideal Answer
-                          </label>
-                          <textarea
-                            name="ideal_answer"
-                            id={`ideal-answer-${index}`}
-                            rows={3}
-                            value={question.ideal_answer}
-                            onChange={(e) => handleNarrativeQuestionChange(index, e)}
-                            className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                            placeholder="Ideal answer"
-                          />
-                        </div>
+                        ))}
                       </div>
-                    ))}
+                    </div>
+                    
+                    {/* Flowchart Sections */}
+                    <div className="mt-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-medium text-gray-900">Flow Chart Sections</h3>
+                        <button
+                          type="button"
+                          onClick={handleAddFlowchartSection}
+                          className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        >
+                          <Plus size={16} className="mr-2" />
+                          Add Section
+                        </button>
+                      </div>
+                      
+                      {formFlowchart.sections.length === 0 ? (
+                        <p className="text-gray-500 text-center py-4">No sections yet. Add some sections to your flow chart.</p>
+                      ) : (
+                        <div className="space-y-6">
+                          {formFlowchart.sections.map((section, index) => (
+                            <div key={section.id} className="bg-gray-50 p-4 rounded-md border border-gray-200 relative">
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveFlowchartSection(index)}
+                                className="absolute top-2 right-2 text-red-600 hover:text-red-800"
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                              
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Section Name</label>
+                                  <input
+                                    type="text"
+                                    value={section.name}
+                                    onChange={(e) => handleFlowchartSectionChange(index, "name", e.target.value)}
+                                    className="w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                                    placeholder="e.g., Paragraphs 1-2"
+                                  />
+                                </div>
+                                
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">Paragraph Reference</label>
+                                  <input
+                                    type="text"
+                                    value={section.paragraphs}
+                                    onChange={(e) => handleFlowchartSectionChange(index, "paragraphs", e.target.value)}
+                                    className="w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                                    placeholder="e.g., 1-2 or 3"
+                                  />
+                                </div>
+                              </div>
+                              
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Correct Answer</label>
+                                <select
+                                  value={section.correct_answer || ""}
+                                  onChange={(e) => handleFlowchartSectionChange(index, "correct_answer", e.target.value)}
+                                  className="w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                                >
+                                  <option value="">-- Select correct answer --</option>
+                                  {formFlowchart.options.map((option, optIdx) => (
+                                    <option key={optIdx} value={option}>
+                                      {option}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
+                )}
                 
                 <div className="mt-6 flex justify-end space-x-3">
                   <button
@@ -1755,17 +2060,56 @@ export default function AdminPanel() {
                                   </p>
                                 </div>
                                 
-                                <h4 className="font-medium text-gray-700 mb-2">Questions:</h4>
-                                <ul className="space-y-2">
-                                  {exercise.questions && exercise.questions.map((question, idx) => (
-                                    <li key={idx} className="bg-white p-3 rounded border border-gray-200">
-                                      <p className="font-medium text-gray-800">{idx + 1}. {question.question_text}</p>
-                                      <p className="text-sm text-gray-600 mt-1">
-                                        <span className="font-medium">Ideal answer:</span> {question.ideal_answer}
-                                      </p>
-                                    </li>
-                                  ))}
-                                </ul>
+                                <h4 className="font-medium text-gray-700 mb-2">Type: {exercise.exercise_type || "questions"}</h4>
+                                
+                                {(!exercise.exercise_type || exercise.exercise_type === "questions") && exercise.questions && (
+                                  <>
+                                    <h4 className="font-medium text-gray-700 mb-2">Questions:</h4>
+                                    <ul className="space-y-2">
+                                      {exercise.questions.map((question, idx) => (
+                                        <li key={idx} className="bg-white p-3 rounded border border-gray-200">
+                                          <p className="font-medium text-gray-800">{idx + 1}. {question.question_text}</p>
+                                          <p className="text-sm text-gray-600 mt-1">
+                                            <span className="font-medium">Ideal answer:</span> {question.ideal_answer}
+                                          </p>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </>
+                                )}
+                                
+                                {exercise.exercise_type === "flowchart" && exercise.flowchart && (
+                                  <>
+                                    <h4 className="font-medium text-gray-700 mb-2">Flow Chart:</h4>
+                                    <div className="mb-4">
+                                      <h5 className="text-sm font-medium text-gray-700 mb-1">Options:</h5>
+                                      <div className="flex flex-wrap gap-2">
+                                        {exercise.flowchart.options.map((option, idx) => (
+                                          <span key={idx} className="px-2 py-1 bg-blue-50 text-blue-700 rounded text-sm border border-blue-200">
+                                            {option}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                    
+                                    <div>
+                                      <h5 className="text-sm font-medium text-gray-700 mb-1">Sections:</h5>
+                                      <ul className="space-y-2">
+                                        {exercise.flowchart.sections.map((section, idx) => (
+                                          <li key={idx} className="bg-white p-3 rounded border border-gray-200">
+                                            <p className="font-medium text-gray-800">{section.name}</p>
+                                            <p className="text-sm text-gray-600">Paragraphs: {section.paragraphs}</p>
+                                            {section.correct_answer && (
+                                              <p className="text-sm text-green-600 mt-1">
+                                                <span className="font-medium">Correct answer:</span> {section.correct_answer}
+                                              </p>
+                                            )}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  </>
+                                )}
                               </div>
                             )}
                           </li>
