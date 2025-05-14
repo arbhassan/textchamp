@@ -43,7 +43,7 @@ const ScoreBadge = ({ score, total, maxScore }) => {
 // Areas for Improvement Component
 const AreasForImprovement = ({ questions }) => {
   // Get incorrect answers - questions with mark of 0
-  const incorrectQuestions = Object.values(questions).filter(q => q.mark === 0);
+  const incorrectQuestions = Object.values(questions).filter(q => q.mark === 0 && !q.isFlowchart);
   
   if (incorrectQuestions.length === 0) {
     return (
@@ -72,6 +72,67 @@ const AreasForImprovement = ({ questions }) => {
             <div>
               <span className="text-sm font-medium text-gray-700">Question {question.id}:</span>
               <p className="text-sm text-gray-600">{question.text}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// Flowchart Areas for Improvement Component
+const FlowchartAreasForImprovement = ({ questions, options }) => {
+  // Get only flowchart questions
+  const flowchartQuestions = Object.values(questions).filter(q => q.isFlowchart);
+  
+  // Get incorrect answers - flowchart items with mark of 0
+  const incorrectQuestions = flowchartQuestions.filter(q => q.mark === 0);
+  
+  if (flowchartQuestions.length === 0) {
+    return null; // No flowchart questions to display
+  }
+  
+  if (incorrectQuestions.length === 0) {
+    return (
+      <div className="bg-green-50 p-4 rounded-lg mt-4 mb-6">
+        <div className="flex items-center gap-2">
+          <CheckCircle className="text-green-600" size={20} />
+          <h5 className="text-green-800 font-medium">Perfect Flowchart!</h5>
+        </div>
+        <p className="text-green-700 mt-2 text-sm">
+          Excellent work! You completed the flowchart correctly.
+        </p>
+      </div>
+    );
+  }
+  
+  return (
+    <div className="bg-amber-50 p-4 rounded-lg mt-4 mb-6">
+      <div className="flex items-center gap-2">
+        <AlertTriangle className="text-amber-600" size={20} />
+        <h5 className="text-amber-800 font-medium">Flowchart Areas for Improvement</h5>
+      </div>
+      
+      {options && options.length > 0 && (
+        <div className="mt-2 mb-3">
+          <p className="text-sm text-amber-800 font-medium mb-1">Available options:</p>
+          <div className="flex flex-wrap gap-2">
+            {options.map((option, idx) => (
+              <span key={idx} className="px-2 py-1 bg-white border border-amber-200 rounded-md text-xs text-amber-700">
+                {option}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      
+      <div className="mt-3 space-y-2">
+        {incorrectQuestions.map((question, index) => (
+          <div key={question.id || `flowchart-${index}`} className="flex items-start gap-2">
+            <XCircle className="text-red-500 mt-0.5 flex-shrink-0" size={16} />
+            <div>
+              <span className="text-sm font-medium text-gray-700">{question.question_text || question.text}:</span>
+              <p className="text-sm text-gray-600">Your answer was incorrect</p>
             </div>
           </div>
         ))}
@@ -112,6 +173,17 @@ export default function FullPracticeFeedback() {
     A: { possible: 0, earned: 0 },
     B: { possible: 0, earned: 0 },
     C: { possible: 0, earned: 0 }
+  })
+  
+  // Add state for exercise types and flowchart options
+  const [exerciseTypes, setExerciseTypes] = useState({
+    A: "visual",
+    B: "questions",
+    C: "non-narrative"
+  })
+  
+  const [flowchartOptions, setFlowchartOptions] = useState({
+    B: []
   })
   
   // Load test data when component mounts
@@ -177,6 +249,22 @@ export default function FullPracticeFeedback() {
         }
         
         if (session.questionsB) {
+          // Set exercise type if available
+          if (session.exerciseTypeB) {
+            setExerciseTypes(prev => ({
+              ...prev,
+              B: session.exerciseTypeB
+            }));
+          }
+          
+          // Set flowchart options if available
+          if (session.flowchartOptionsB) {
+            setFlowchartOptions(prev => ({
+              ...prev,
+              B: session.flowchartOptionsB
+            }));
+          }
+          
           // Use marks directly from the database/session
           const questionsWithMarks = Object.values(session.questionsB).reduce((acc, question) => {
             acc[question.id] = {
@@ -190,7 +278,10 @@ export default function FullPracticeFeedback() {
           setQuestionsB(questionsWithMarks);
           
           // Update mark summary for Section B
-          const sectionBMarks = Object.values(questionsWithMarks).reduce(
+          // Filter out flowchart items if present for regular question count
+          const regularQuestions = Object.values(questionsWithMarks).filter(q => !q.isFlowchart);
+          
+          const sectionBMarks = regularQuestions.reduce(
             (summary, q) => ({
               total: summary.total + 1,
               correct: summary.correct + (q.mark || 0)
@@ -204,11 +295,11 @@ export default function FullPracticeFeedback() {
           }));
           
           // Calculate total marks possible and earned
-          const totalPossibleMarks = Object.values(questionsWithMarks).reduce(
+          const totalPossibleMarks = regularQuestions.reduce(
             (sum, q) => sum + (q.marks || 1), 0
           );
           
-          const totalEarnedMarks = Object.values(questionsWithMarks).reduce(
+          const totalEarnedMarks = regularQuestions.reduce(
             (sum, q) => sum + ((q.mark > 0) ? (q.marks || 1) : 0), 0
           );
           
@@ -315,6 +406,15 @@ ${feedbackText}
     
     return markSummaryText;
   }
+  
+  // Separate flowchart questions from normal questions for section B
+  const getNormalQuestionsB = () => {
+    return Object.values(questionsB).filter(q => !q.isFlowchart);
+  };
+  
+  const getFlowchartQuestionsB = () => {
+    return Object.values(questionsB).filter(q => q.isFlowchart);
+  };
   
   if (loading) {
     return (
@@ -586,25 +686,24 @@ ${feedbackText}
           
           {/* Section B Feedback */}
           {currentFeedbackTab === "B" && (
-            <div>
-              <h3 className="text-lg font-bold text-orange-800 mb-4">Narrative Comprehension Questions</h3>
+            <div className="bg-white rounded-3xl shadow-sm p-8">
+              <h3 className="text-lg font-bold text-blue-800 mb-4">Narrative Comprehension Questions</h3>
               
-              {Object.values(questionsB).length > 0 && (
-                <AreasForImprovement questions={questionsB} />
-              )}
+              {/* Show areas for improvement */}
+              <AreasForImprovement questions={questionsB} />
               
-              {Object.values(questionsB).map((question, index) => (
+              {/* Show questions and answers */}
+              {getNormalQuestionsB().map((question, index) => (
                 <div key={index} className="mb-8 p-4 border border-gray-100 rounded-lg bg-gray-50">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                      <div className="flex items-center justify-center w-6 h-6 rounded-full bg-orange-100 text-orange-700 font-medium text-xs">
+                      <div className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 text-blue-700 font-medium text-xs">
                         {question.id}
                       </div>
                       <h4 className="font-medium text-gray-800">{question.text}</h4>
                     </div>
                     <div className="flex items-center gap-1">
                       <span className="text-sm font-medium">Mark:</span>
-                      {/* Display marks value from question */}
                       <span className={`text-sm font-bold ${question.mark > 0 ? 'text-green-600' : 'text-red-500'}`}>
                         {question.mark || 0}/{question.marks || 1}
                       </span>
@@ -640,16 +739,87 @@ ${feedbackText}
                   <div>
                     <h5 className="text-sm font-medium text-green-700 mb-1">Model Answer:</h5>
                     <div className="p-3 bg-green-50 border border-green-100 rounded text-sm text-gray-800">
-                      {question.answer}
+                      {question.answer || question.ideal_answer || "No model answer available"}
                     </div>
                   </div>
                 </div>
               ))}
               
+              {/* Flowchart Feedback Section - Only show if exercise type is "combined" and there are flowchart questions */}
+              {exerciseTypes.B === "combined" && getFlowchartQuestionsB().length > 0 && (
+                <div className="mt-8 border-t pt-8">
+                  <h3 className="text-lg font-bold text-blue-800 mb-4">Flowchart Results</h3>
+                  
+                  {/* Show improvement areas for flowchart questions */}
+                  <FlowchartAreasForImprovement questions={questionsB} options={flowchartOptions.B} />
+                  
+                  {/* Display flowchart questions and answers */}
+                  <div className="mt-4 bg-blue-50 p-4 rounded-lg">
+                    <h4 className="font-medium text-blue-800 mb-3">Flowchart Answers</h4>
+                    
+                    {flowchartOptions.B.length > 0 && (
+                      <div className="mb-4">
+                        <h5 className="text-sm font-medium text-gray-700 mb-2">Available Options:</h5>
+                        <div className="flex flex-wrap gap-2 mb-4">
+                          {flowchartOptions.B.map((option, idx) => (
+                            <div 
+                              key={`option-${idx}`} 
+                              className="px-2 py-1 bg-white border border-blue-200 rounded-md text-sm text-blue-800"
+                            >
+                              {option}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    <div className="space-y-4">
+                      {getFlowchartQuestionsB().map((question, index) => {
+                        // Extract the section ID from the flowchart ID
+                        const sectionIdMatch = question.id.match(/flowchart-(.+)/);
+                        const sectionId = sectionIdMatch ? sectionIdMatch[1] : `section-${index}`;
+                        
+                        return (
+                          <div key={question.id} className="flex items-start gap-3 p-3 bg-white rounded-lg border border-blue-100">
+                            <div className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center ${question.mark > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                              {question.mark > 0 ? (
+                                <CheckCircle size={14} />
+                              ) : (
+                                <X size={14} />
+                              )}
+                            </div>
+                            <div className="flex-1">
+                              <div className="flex justify-between">
+                                <h5 className="text-sm font-medium text-gray-800">{question.question_text || question.text}</h5>
+                              </div>
+                              <div className="mt-2 text-sm">
+                                <div className="flex gap-2">
+                                  <span className="font-medium text-gray-700">Your answer:</span>
+                                  <span className={question.mark > 0 ? 'text-green-600 font-medium' : 'text-red-600'}>
+                                    {answersB[sectionId] || <em className="text-gray-400">No answer</em>}
+                                  </span>
+                                </div>
+                                {question.ideal_answer && (
+                                  <div className="flex gap-2 mt-1">
+                                    <span className="font-medium text-gray-700">Correct answer:</span>
+                                    <span className="text-green-600">{question.ideal_answer || question.answer}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Show AI feedback */}
               {sectionFeedback.B && (
                 <div className="prose prose-sm max-w-none text-gray-700 markdown-content mt-6">
                   <div className="flex items-center justify-between mb-3">
-                    <h4 className="text-lg font-medium text-orange-800">AI Feedback:</h4>
+                    <h4 className="text-lg font-medium text-blue-800">AI Feedback:</h4>
                     <ScoreBadge 
                       score={markSummary.B.correct} 
                       total={markSummary.B.total} 
@@ -669,7 +839,7 @@ ${feedbackText}
                       blockquote: ({node, ...props}) => <blockquote className="pl-4 border-l-4 border-gray-200 italic my-2" {...props} />
                     }}
                   >
-                    {formatFeedback(sectionFeedback.B, 'B')}
+                    {formatFeedback(sectionFeedback.B, "B")}
                   </ReactMarkdown>
                 </div>
               )}

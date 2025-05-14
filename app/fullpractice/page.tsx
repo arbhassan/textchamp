@@ -81,6 +81,7 @@ export default function FullComprehensionPractice() {
   const [visualExercise, setVisualExercise] = useState<VisualExercise | null>(null)
   const [visualQuestions, setVisualQuestions] = useState<Record<number, Question>>({})
   const [narrativeExercise, setNarrativeExercise] = useState<NarrativeExercise | null>(null)
+  const [questionsB, setQuestionsB] = useState<Record<string, any>>({}) // Add state for questionsB
   const [nonNarrativeExercise, setNonNarrativeExercise] = useState<NonNarrativeExercise | null>(null)
   
   // New state for multiple exercises
@@ -299,6 +300,68 @@ export default function FullComprehensionPractice() {
         } else {
           setNarrativeExercise(narrativeData)
           
+          // Initialize questionsB state based on exercise type
+          if (narrativeData.exercise_type === "questions" && narrativeData.questions && narrativeData.questions.length > 0) {
+            // Create question records for regular questions
+            const questionRecordB = narrativeData.questions.reduce((acc, question, index) => {
+              acc[index + 1] = {
+                id: index + 1,
+                text: question.question_text || question.text,
+                answer: question.ideal_answer || question.answer,
+                marks: question.marks || 1
+              };
+              return acc;
+            }, {});
+            
+            setQuestionsB(questionRecordB);
+          } 
+          else if (narrativeData.exercise_type === "combined" && narrativeData.flowchart) {
+            // For combined type, prepare both question and flowchart records
+            let combinedQuestions = {};
+            
+            // Add regular questions
+            if (narrativeData.questions && narrativeData.questions.length > 0) {
+              narrativeData.questions.forEach((question, index) => {
+                combinedQuestions[index + 1] = {
+                  id: index + 1,
+                  text: question.question_text || question.text,
+                  answer: question.ideal_answer || question.answer,
+                  marks: question.marks || 1
+                };
+              });
+            }
+            
+            // Add flowchart questions
+            narrativeData.flowchart.sections.forEach((section, idx) => {
+              const sectionId = section.id || `section-${idx}`;
+              combinedQuestions[`flowchart-${sectionId}`] = {
+                id: `flowchart-${sectionId}`,
+                question_text: section.name || `Section ${idx + 1}`,
+                ideal_answer: section.correct_answer || narrativeData.flowchart.options[0],
+                isFlowchart: true,
+                mark: 0 // Initialize mark to 0
+              };
+            });
+            
+            setQuestionsB(combinedQuestions);
+          }
+          else if (narrativeData.exercise_type === "flowchart" && narrativeData.flowchart) {
+            // For flowchart-only exercises
+            const flowchartQuestions = narrativeData.flowchart.sections.reduce((acc, section, idx) => {
+              const sectionId = section.id || `section-${idx}`;
+              acc[`flowchart-${sectionId}`] = {
+                id: `flowchart-${sectionId}`,
+                question_text: section.name || `Section ${idx + 1}`,
+                ideal_answer: section.correct_answer || narrativeData.flowchart.options[0],
+                isFlowchart: true,
+                mark: 0
+              };
+              return acc;
+            }, {});
+            
+            setQuestionsB(flowchartQuestions);
+          }
+          
           // Initialize answers state based on the narrative exercise type
           if (narrativeData.exercise_type === "flowchart" && narrativeData.flowchart) {
             // Initialize answers for flowchart exercise
@@ -308,6 +371,24 @@ export default function FullComprehensionPractice() {
             }, {})
             
             setAnswersB(initialAnswersB)
+          } else if (narrativeData.exercise_type === "combined" && narrativeData.flowchart) {
+            // Initialize answers for combined type
+            let initialAnswersB = {};
+            
+            // Add answers for questions part
+            if (narrativeData.questions && narrativeData.questions.length > 0) {
+              narrativeData.questions.forEach((question, index) => {
+                initialAnswersB[index + 1] = "";
+              });
+            }
+            
+            // Add answers for flowchart part
+            narrativeData.flowchart.sections.forEach((section, idx) => {
+              const sectionId = section.id || `section-${idx}`;
+              initialAnswersB[sectionId] = "";
+            });
+            
+            setAnswersB(initialAnswersB);
           } else if (narrativeData.questions && narrativeData.questions.length > 0) {
             // Initialize answers for question-type exercise
             const initialAnswersB = narrativeData.questions.reduce((acc, question, index) => {
@@ -464,7 +545,11 @@ export default function FullComprehensionPractice() {
         // Save exercise IDs
         visualExerciseId: visualExercise?.id,
         narrativeExerciseId: narrativeExercise?.id,
-        nonNarrativeExerciseId: nonNarrativeExercise?.id
+        nonNarrativeExerciseId: nonNarrativeExercise?.id,
+        // Save narrative exercise type for Section B
+        exerciseTypeB: narrativeExercise?.exercise_type || "questions",
+        // Save flowchart options if available for Section B
+        flowchartOptionsB: narrativeExercise?.flowchart?.options || []
       }
       
       // Save current session
@@ -602,9 +687,17 @@ export default function FullComprehensionPractice() {
 
   // Questions for Section B - Narrative Comprehension
   const getQuestionsB = () => {
+    // If we already have questions in the state, return the state directly
+    if (Object.keys(questionsB).length > 0) {
+      return questionsB;
+    }
+    
+    // Otherwise, generate questions from narrative exercise data
+    let generatedQuestionsB = {};
+    
     // If we have loaded questions from Supabase
     if (narrativeExercise?.questions && narrativeExercise.questions.length > 0) {
-      return narrativeExercise.questions.reduce((acc, question, index) => {
+      generatedQuestionsB = narrativeExercise.questions.reduce((acc, question, index) => {
         acc[index + 1] = {
           id: index + 1,
           text: question.question_text || question.text,
@@ -612,30 +705,38 @@ export default function FullComprehensionPractice() {
           marks: question.marks || 1
         }
         return acc
-      }, {})
+      }, {});
+    } else {
+      // Fallback questions if no questions data is available
+      generatedQuestionsB = {
+        1: {
+          id: 1,
+          text: "What is the main character's attitude toward the forest?",
+          answer: "Elara is curious and drawn to the forest, unlike the other villagers who fear it. She's adventurous and interested in its secrets.",
+          marks: 1
+        },
+        2: {
+          id: 2,
+          text: "What does the grandmother's warning suggest about the forest?",
+          answer: "The grandmother's warning suggests the forest is magical but potentially dangerous. It gives gifts that come with a price, indicating it has a dual nature of beauty and risk.",
+          marks: 2
+        },
+        3: {
+          id: 3,
+          text: "What literary device is used in \"The Whispering Woods\"?",
+          answer: "Personification is used in 'The Whispering Woods' - the forest is given human-like qualities such as whispering and giving gifts.",
+          marks: 2
+        }
+      };
     }
     
-    // Fallback questions
-    return {
-      1: {
-        id: 1,
-        text: "What is the main character's attitude toward the forest?",
-        answer: "Elara is curious and drawn to the forest, unlike the other villagers who fear it. She's adventurous and interested in its secrets.",
-        marks: 1
-      },
-      2: {
-        id: 2,
-        text: "What does the grandmother's warning suggest about the forest?",
-        answer: "The grandmother's warning suggests the forest is magical but potentially dangerous. It gives gifts that come with a price, indicating it has a dual nature of beauty and risk.",
-        marks: 2
-      },
-      3: {
-        id: 3,
-        text: "What literary device is used in \"The Whispering Woods\"?",
-        answer: "Personification is used in 'The Whispering Woods' - the forest is given human-like qualities such as whispering and giving gifts.",
-        marks: 2
-      }
+    // Update the state if we generated new questions
+    if (Object.keys(generatedQuestionsB).length > 0 && Object.keys(questionsB).length === 0) {
+      setQuestionsB(generatedQuestionsB);
     }
+    
+    // Return the state directly
+    return questionsB;
   }
   
   // Questions for Section C - Non-Narrative Comprehension
@@ -678,7 +779,8 @@ export default function FullComprehensionPractice() {
   
   // Use the getter functions to get the questions
   const questionsA = getQuestionsA()
-  const questionsB = getQuestionsB()
+  // Don't redeclare questionsB, just call the getter function to initialize if needed
+  getQuestionsB()
   const questionsC = getQuestionsC()
 
   // Content for each section
@@ -762,7 +864,86 @@ export default function FullComprehensionPractice() {
       
       let result;
       
-      if (narrativeExercise?.exercise_type === "flowchart" && narrativeExercise?.flowchart) {
+      if (narrativeExercise?.exercise_type === "questions") {
+        // Regular question-based evaluation
+        const questionsWithAnswers: QuestionWithAnswer[] = Object.values(questionsB).map(q => ({
+          question: q.text,
+          idealAnswer: q.answer,
+          userAnswer: answersB[q.id] || ""
+        }));
+        
+        result = await evaluateAnswers(storyText, questionsWithAnswers);
+      } 
+      else if (narrativeExercise?.exercise_type === "combined" && narrativeExercise?.flowchart) {
+        // For combined exercises, evaluate both parts
+        let questionScore = 0;
+        let flowchartScore = 0;
+        let questionFeedback = "";
+        let flowchartFeedback = "";
+        
+        // Evaluate questions if present
+        if (narrativeExercise.questions && narrativeExercise.questions.length > 0) {
+          const questionsWithAnswers: QuestionWithAnswer[] = Object.values(questionsB).map(q => ({
+            question: q.text,
+            idealAnswer: q.answer,
+            userAnswer: answersB[q.id] || ''
+          }));
+          
+          const questionResult = await evaluateAnswers(storyText, questionsWithAnswers);
+          questionScore = typeof questionResult.score === 'number' ? questionResult.score : Number(questionResult.score) || 0;
+          questionFeedback = questionResult.feedback || "";
+        }
+        
+        // Evaluate flowchart if present
+        if (narrativeExercise.flowchart) {
+          // Implement basic evaluation for flowchart answers
+          const flowchartSections = narrativeExercise.flowchart.sections;
+          const correctAnswers = flowchartSections.filter((section, idx) => {
+            const sectionId = section.id || `section-${idx}`;
+            const userAnswer = answersB[sectionId] || '';
+            // If there's a correct_answer property, compare with it
+            if (section.correct_answer) {
+              return userAnswer.trim().toLowerCase() === section.correct_answer.trim().toLowerCase();
+            }
+            // Otherwise check if answer is one of the options
+            return narrativeExercise.flowchart.options.some(option => 
+              userAnswer.trim().toLowerCase() === option.trim().toLowerCase()
+            );
+          });
+          
+          // Calculate score as percentage of correct answers
+          const correctCount = correctAnswers.length;
+          const totalCount = flowchartSections.length;
+          flowchartScore = totalCount > 0 ? Math.round((correctCount / totalCount) * 100) : 0;
+          
+          // Generate feedback for flowchart answers
+          flowchartFeedback = `You correctly answered ${correctCount} out of ${totalCount} flowchart sections.`;
+          
+          if (correctCount === totalCount) {
+            flowchartFeedback += "\n\nExcellent work on the flowchart! You've correctly identified all the main elements.";
+          } else if (correctCount > totalCount / 2) {
+            flowchartFeedback += "\n\nGood work on the flowchart. You've correctly identified most of the main elements.";
+          } else {
+            flowchartFeedback += "\n\nYou need to work on identifying the main elements in the text. Consider how each section connects to the key ideas.";
+          }
+        }
+        
+        // Combine scores and feedback
+        const totalQuestionWeight = narrativeExercise.questions ? 0.7 : 0; // 70% weight for questions if present
+        const totalFlowchartWeight = narrativeExercise.flowchart ? (narrativeExercise.questions ? 0.3 : 1) : 0; // 30% weight for flowchart if questions present, 100% otherwise
+        
+        const combinedScore = (questionScore * totalQuestionWeight) + (flowchartScore * totalFlowchartWeight);
+        const combinedFeedback = [
+          narrativeExercise.questions && narrativeExercise.questions.length > 0 ? "Questions Feedback:\n" + questionFeedback : "",
+          narrativeExercise.flowchart ? "Flowchart Feedback:\n" + flowchartFeedback : ""
+        ].filter(Boolean).join("\n\n");
+        
+        result = {
+          feedback: combinedFeedback,
+          score: combinedScore
+        };
+      }
+      else if (narrativeExercise?.exercise_type === "flowchart" && narrativeExercise?.flowchart) {
         // For flowchart exercises, we create a different evaluation
         // Convert flowchart answers to QuestionWithAnswer format for the evaluator
         const questionsWithAnswers: QuestionWithAnswer[] = narrativeExercise.flowchart.sections.map((section, idx) => {
@@ -773,15 +954,6 @@ export default function FullComprehensionPractice() {
             userAnswer: answersB[sectionKey] || ""
           };
         });
-        
-        result = await evaluateAnswers(storyText, questionsWithAnswers);
-      } else {
-        // Regular question-based evaluation
-        const questionsWithAnswers: QuestionWithAnswer[] = Object.values(questionsB).map(q => ({
-          question: q.text,
-          idealAnswer: q.answer,
-          userAnswer: answersB[q.id] || ""
-        }));
         
         result = await evaluateAnswers(storyText, questionsWithAnswers);
       }
@@ -1039,16 +1211,11 @@ export default function FullComprehensionPractice() {
       
       setNarrativeExercise(selectedExercise)
       
-      // Reset answers and initialize based on the exercise type
-      if (selectedExercise.exercise_type === "flowchart" && selectedExercise.flowchart) {
-        // Initialize answers for flowchart exercise
-        const initialAnswersB = selectedExercise.flowchart.sections.reduce((acc, section, idx) => {
-          acc[section.id || `section-${idx}`] = ""
-          return acc
-        }, {})
-        
-        setAnswersB(initialAnswersB)
-      } else if (selectedExercise.questions && selectedExercise.questions.length > 0) {
+      // Get questions for the feedback page
+      let newQuestionsB = {};
+      
+      // Initialize answers and questions based on the exercise type
+      if (selectedExercise.exercise_type === "questions" && selectedExercise.questions && selectedExercise.questions.length > 0) {
         // Initialize answers for question-type exercise
         const initialAnswersB = selectedExercise.questions.reduce((acc, question, index) => {
           acc[index + 1] = ""
@@ -1056,13 +1223,92 @@ export default function FullComprehensionPractice() {
         }, {})
         
         setAnswersB(initialAnswersB)
+        
+        // Prepare questions for feedback
+        newQuestionsB = selectedExercise.questions.reduce((acc, question, index) => {
+          acc[index + 1] = {
+            id: index + 1,
+            text: question.question_text || question.text,
+            answer: question.ideal_answer || question.answer,
+            marks: question.marks || 1
+          }
+          return acc
+        }, {})
       }
+      else if (selectedExercise.exercise_type === "combined" && selectedExercise.flowchart && selectedExercise.questions) {
+        // Initialize answers for combined exercise type
+        let initialAnswersB = {};
+        
+        // Add answers for questions part
+        if (selectedExercise.questions && selectedExercise.questions.length > 0) {
+          selectedExercise.questions.forEach((question, index) => {
+            initialAnswersB[index + 1] = "";
+            
+            // Add to questions for feedback
+            newQuestionsB[index + 1] = {
+              id: index + 1,
+              text: question.question_text || question.text,
+              answer: question.ideal_answer || question.answer,
+              marks: question.marks || 1
+            };
+          });
+        }
+        
+        // Add answers for flowchart part
+        if (selectedExercise.flowchart && selectedExercise.flowchart.sections) {
+          selectedExercise.flowchart.sections.forEach((section, idx) => {
+            const sectionId = section.id || `section-${idx}`;
+            initialAnswersB[sectionId] = "";
+            
+            // Add to questions for feedback - with isFlowchart flag to distinguish them
+            newQuestionsB[`flowchart-${sectionId}`] = {
+              id: `flowchart-${sectionId}`,
+              question_text: section.name || `Section ${idx + 1}`,
+              ideal_answer: section.correct_answer || selectedExercise.flowchart.options[0],
+              isFlowchart: true,
+              mark: 0 // Initialize mark to 0
+            };
+          });
+        }
+        
+        setAnswersB(initialAnswersB);
+      }
+      else if (selectedExercise.exercise_type === "flowchart" && selectedExercise.flowchart) {
+        // Initialize answers for flowchart-only exercise
+        const initialAnswersB = selectedExercise.flowchart.sections.reduce((acc, section, idx) => {
+          const sectionId = section.id || `section-${idx}`;
+          acc[sectionId] = "";
+          
+          // Add to questions for feedback
+          newQuestionsB[`flowchart-${sectionId}`] = {
+            id: `flowchart-${sectionId}`,
+            question_text: section.name || `Section ${idx + 1}`,
+            ideal_answer: section.correct_answer || selectedExercise.flowchart.options[0],
+            isFlowchart: true,
+            mark: 0 // Initialize mark to 0
+          };
+          
+          return acc;
+        }, {});
+        
+        setAnswersB(initialAnswersB);
+      }
+      
+      // Update questions for the feedback page
+      setQuestionsB(newQuestionsB);
       
       // Reset section score
       setSectionScores(prev => ({
         ...prev,
         B: null
-      }))
+      }));
+      
+      // Reset section feedback
+      setSectionFeedback(prev => ({
+        ...prev,
+        B: ""
+      }));
+      
     } catch (error) {
       console.error('Error changing narrative exercise:', error)
     } finally {
@@ -1260,6 +1506,13 @@ export default function FullComprehensionPractice() {
                     <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
                       <img src={sectionContent.A.content} alt={visualExercise?.title || "Visual Exercise"} className="w-full" />
                     </div>
+                  ) : currentSection === "B" && narrativeExercise?.exercise_type === "combined" && narrativeExercise?.flowchart ? (
+                    // For combined type in Section B, show the passage here
+                    <div className="whitespace-pre-wrap prose max-w-none text-gray-700">
+                      <ReactMarkdown>
+                        {narrativeExercise?.story_text}
+                      </ReactMarkdown>
+                    </div>
                   ) : (
                     <div className="whitespace-pre-wrap prose max-w-none text-gray-700">
                       <ReactMarkdown>
@@ -1301,7 +1554,7 @@ export default function FullComprehensionPractice() {
                 
                 {currentSection === "B" && (
                   <>
-                    {/* Section B - Either Questions or Flowchart based on exercise_type */}
+                    {/* Section B - Based on exercise_type */}
                     {narrativeExercise?.exercise_type === "flowchart" && narrativeExercise?.flowchart ? (
                       <div className="bg-white rounded-2xl shadow-sm p-6">
                         <div className="flex justify-between items-center mb-4">
@@ -1363,6 +1616,106 @@ export default function FullComprehensionPractice() {
                             )}
                           </div>
                         ))}
+                      </div>
+                    ) : narrativeExercise?.exercise_type === "combined" && narrativeExercise?.flowchart ? (
+                      /* Combined Exercise UI - Both Questions and Flowchart */
+                      <div>
+                        {/* Questions Section */}
+                        {narrativeExercise.questions && narrativeExercise.questions.length > 0 && (
+                          <div className="mb-8">
+                            <h3 className="text-lg font-medium text-gray-800 mb-4">Part 1: Questions</h3>
+                            <div className="space-y-6">
+                              {Object.values(questionsB)
+                                .filter(q => !q.isFlowchart)
+                                .map(question => (
+                                <div key={question.id} className="bg-white rounded-2xl shadow-sm p-6">
+                                  <div className="flex flex-wrap items-start gap-4 mb-4">
+                                    <div className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium">
+                                      {question.id}
+                                    </div>
+                                    <h2 className="flex-1 text-lg font-medium text-gray-800">{question.text}</h2>
+                                    <div className="flex-shrink-0 text-sm text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded-md">
+                                      {question.marks || 1} {(question.marks || 1) === 1 ? 'mark' : 'marks'}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <textarea
+                                      className="w-full h-24 p-4 border text-gray-700 border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                      placeholder="Type your answer here..."
+                                      value={answersB[question.id] || ''}
+                                      onChange={(e) => handleAnswerChangeB(question.id, e.target.value)}
+                                    />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Flowchart Section */}
+                        <div>
+                          <h3 className="text-lg font-medium text-gray-800 mb-4">Part 2: Flow Chart</h3>
+                          <div className="bg-white rounded-2xl shadow-sm p-6">
+                            <div className="flex justify-between items-center mb-4">
+                              <div className="flex items-center">
+                                <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">Flow Chart</span>
+                              </div>
+                              <button className="text-gray-400 hover:text-gray-600">
+                                <HelpCircle size={18} />
+                              </button>
+                            </div>
+                            
+                            <p className="mb-6 text-gray-700">
+                              {narrativeExercise.description || "Complete the flowchart by choosing one word from the box to summarise the main thoughts or feelings presented in each part of the text."}
+                            </p>
+                            
+                            {/* Options grid */}
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-6">
+                              {narrativeExercise.flowchart.options.map((option, index) => (
+                                <div 
+                                  key={`flowchart-option-${index}`} 
+                                  className={`p-2 border rounded-md text-center text-gray-800 ${
+                                    index >= narrativeExercise.flowchart.options.length - 2 ? 'col-span-1 sm:col-span-2' : ''
+                                  }`}
+                                >
+                                  {option}
+                                </div>
+                              ))}
+                            </div>
+                            
+                            {/* Flow chart sections */}
+                            {narrativeExercise.flowchart.sections.map((section, idx) => (
+                              <div key={`flowchart-section-${section.id || idx}`} className="mb-8">
+                                <div className="mb-1 font-medium text-gray-800">
+                                  {section.name}: ({String.fromCharCode(105 + idx)})
+                                </div>
+                                <input 
+                                  type="text" 
+                                  className="w-full p-2 border rounded-md text-gray-800"
+                                  placeholder="Enter word here"
+                                  value={answersB[section.id || `section-${idx}`] || ''}
+                                  onChange={(e) => {
+                                    // Use a unique identifier for each section
+                                    const sectionKey = section.id || `section-${idx}`;
+                                    setAnswersB(prev => ({
+                                      ...prev,
+                                      [sectionKey]: e.target.value
+                                    }));
+                                  }}
+                                />
+                                
+                                {/* Add arrow between sections except after the last one */}
+                                {idx < narrativeExercise.flowchart.sections.length - 1 && (
+                                  <div className="flex justify-center my-4">
+                                    <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path>
+                                    </svg>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       </div>
                     ) : (
                       /* Original questions interface */
