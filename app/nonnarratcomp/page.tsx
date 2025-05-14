@@ -44,136 +44,109 @@ export default function SectionC() {
   // New state variables for handling multiple exercises
   const [allExercises, setAllExercises] = useState<NonNarrativeExercise[]>([])
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0)
-  const [exerciseChanged, setExerciseChanged] = useState(false)
   
-  // Fetch all available exercises on initial load
+  // Fetch all available exercises and their data on initial load
   useEffect(() => {
-    async function fetchAllExercises() {
+    async function fetchAllExercisesData() {
       try {
-        const { data, error } = await supabase
+        setLoading(true)
+        
+        // Fetch all non-narrative exercises
+        const { data: exercisesData, error: exercisesError } = await supabase
           .from('non_narrative_exercises')
           .select('*')
           .order('id')
         
-        if (error) throw error
+        if (exercisesError) throw exercisesError
         
-        if (data && data.length > 0) {
-          setAllExercises(data)
-        }
-      } catch (error) {
-        console.error('Error fetching all exercises:', error)
-      }
-    }
-    
-    fetchAllExercises()
-  }, [])
-  
-  // Fetch exercise and questions data from Supabase
-  useEffect(() => {
-    async function fetchExerciseData() {
-      try {
-        setLoading(true)
-        
-        // Check if there's a specific exercise ID in the URL
-        const searchParams = new URLSearchParams(window.location.search)
-        const exerciseId = searchParams.get('exercise')
-        
-        // Fetch the non-narrative exercise
-        let exerciseQuery = supabase
-          .from('non_narrative_exercises')
-          .select('*')
-        
-        // If we have a specific exercise ID, use it
-        if (exerciseId) {
-          exerciseQuery = exerciseQuery.eq('id', exerciseId)
-          // Find the index of this exercise in allExercises
-          if (allExercises.length > 0) {
-            const index = allExercises.findIndex(ex => ex.id.toString() === exerciseId)
+        if (exercisesData && exercisesData.length > 0) {
+          setAllExercises(exercisesData)
+          
+          // Check if there's a specific exercise ID in the URL
+          const searchParams = new URLSearchParams(window.location.search)
+          const exerciseId = searchParams.get('exercise')
+          
+          // Determine which exercise to display initially
+          let currentIndex = 0
+          if (exerciseId) {
+            const index = exercisesData.findIndex(ex => ex.id.toString() === exerciseId)
             if (index !== -1) {
-              setCurrentExerciseIndex(index)
+              currentIndex = index
             }
           }
-        } else if (allExercises.length > 0) {
-          // If no specific ID is provided, get the first exercise
-          exerciseQuery = exerciseQuery.eq('id', allExercises[0].id)
-        } else {
-          // Fallback to getting the first exercise
-          exerciseQuery = exerciseQuery.order('id', { ascending: true }).limit(1)
-        }
-        
-        const { data: exerciseData, error: exerciseError } = await exerciseQuery.single()
-        
-        if (exerciseError) throw exerciseError
-        
-        // Set exercise data
-        setExercise(exerciseData)
-        
-        // Get questions from the JSONB field
-        const exerciseQuestions = exerciseData.questions as Question[]
-        
-        // Sort questions by order
-        const sortedQuestions = [...exerciseQuestions].sort((a, b) => a.question_order - b.question_order)
-        setQuestions(sortedQuestions)
-        
-        // Set time remaining based on the exercise's time limit (converting from seconds to minutes/seconds)
-        const totalSeconds = exerciseData.time_limit || 1500 // Default to 25 minutes if not specified
-        setTimeRemaining({
-          minutes: Math.floor(totalSeconds / 60),
-          seconds: totalSeconds % 60
-        })
-        
-        // Initialize empty answers for each question
-        const initialAnswers: Record<number | string, string> = {}
-        sortedQuestions.forEach(q => {
-          initialAnswers[q.id || `question-${q.question_order}`] = ""
-        })
-        setAnswers(initialAnswers)
-        setExerciseChanged(false)
-        
-        // Reset word count
-        if (sortedQuestions.find(q => q.question_order === 2)) {
-          setWordCount(0)
-        }
-        
-        // Check if we're resuming a saved session
-        const isResuming = searchParams.get('resume') === 'true'
-        if (isResuming) {
-          try {
-            // Check if this session is completed first
-            const recentSessionsStr = localStorage.getItem('recentSessions')
-            if (recentSessionsStr) {
-              const recentSessions = JSON.parse(recentSessionsStr)
-              const sectionSession = recentSessions.find(s => s.id === 'sectionC')
-              
-              // If session exists and is completed, redirect back to dashboard
-              if (sectionSession && sectionSession.status === "completed") {
-                router.push('/')
-                return
-              }
-            }
-            
-            const savedSession = localStorage.getItem('savedSession_sectionC')
-            
-            if (savedSession) {
-              const session = JSON.parse(savedSession)
-              
-              if (session.answers) {
-                setAnswers(session.answers)
+          
+          setCurrentExerciseIndex(currentIndex)
+          
+          // Set the current exercise
+          const currentExercise = exercisesData[currentIndex]
+          setExercise(currentExercise)
+          
+          // Get questions from the JSONB field
+          const exerciseQuestions = currentExercise.questions as Question[]
+          
+          // Sort questions by order
+          const sortedQuestions = [...exerciseQuestions].sort((a, b) => a.question_order - b.question_order)
+          setQuestions(sortedQuestions)
+          
+          // Set time remaining based on the exercise's time limit (converting from seconds to minutes/seconds)
+          const totalSeconds = currentExercise.time_limit || 1500 // Default to 25 minutes if not specified
+          setTimeRemaining({
+            minutes: Math.floor(totalSeconds / 60),
+            seconds: totalSeconds % 60
+          })
+          
+          // Initialize empty answers for each question
+          const initialAnswers: Record<number | string, string> = {}
+          sortedQuestions.forEach(q => {
+            initialAnswers[q.id || `question-${q.question_order}`] = ""
+          })
+          setAnswers(initialAnswers)
+          
+          // Reset word count
+          if (sortedQuestions.find(q => q.question_order === 2)) {
+            setWordCount(0)
+          }
+          
+          // Check if we're resuming a saved session
+          const isResuming = searchParams.get('resume') === 'true'
+          if (isResuming) {
+            try {
+              // Check if this session is completed first
+              const recentSessionsStr = localStorage.getItem('recentSessions')
+              if (recentSessionsStr) {
+                const recentSessions = JSON.parse(recentSessionsStr)
+                const sectionSession = recentSessions.find(s => s.id === 'sectionC')
                 
-                // Recalculate word count for answer 2 (summary)
-                const summaryQuestionId = sortedQuestions.find(q => q.question_order === 2)?.id
-                if (summaryQuestionId && session.answers[summaryQuestionId]) {
-                  const words = session.answers[summaryQuestionId].trim().split(/\s+/).filter(Boolean).length
-                  setWordCount(words)
+                // If session exists and is completed, redirect back to dashboard
+                if (sectionSession && sectionSession.status === "completed") {
+                  router.push('/')
+                  return
                 }
               }
               
-              if (session.timeRemaining) {
-                setTimeRemaining(session.timeRemaining)
+              const savedSession = localStorage.getItem('savedSession_sectionC')
+              
+              if (savedSession) {
+                const session = JSON.parse(savedSession)
+                
+                if (session.answers) {
+                  setAnswers(session.answers)
+                  
+                  // Recalculate word count for answer 2 (summary)
+                  const summaryQuestionId = sortedQuestions.find(q => q.question_order === 2)?.id
+                  if (summaryQuestionId && session.answers[summaryQuestionId]) {
+                    const words = session.answers[summaryQuestionId].trim().split(/\s+/).filter(Boolean).length
+                    setWordCount(words)
+                  }
+                }
+                
+                if (session.timeRemaining) {
+                  setTimeRemaining(session.timeRemaining)
+                }
               }
+            } catch (error) {
+              console.error('Error loading saved session:', error)
             }
-          } catch (error) {
-            console.error('Error loading saved session:', error)
           }
         }
       } catch (error) {
@@ -183,10 +156,8 @@ export default function SectionC() {
       }
     }
     
-    if (allExercises.length > 0 || exerciseChanged) {
-      fetchExerciseData()
-    }
-  }, [allExercises, exerciseChanged])
+    fetchAllExercisesData()
+  }, [router])
   
   // Start the timer countdown
   useEffect(() => {
@@ -425,19 +396,42 @@ export default function SectionC() {
       const nextIndex = currentExerciseIndex + 1
       setCurrentExerciseIndex(nextIndex)
       
+      // Get the next exercise
+      const nextExercise = allExercises[nextIndex]
+      setExercise(nextExercise)
+      
       // Update URL without refreshing the page
-      const nextExerciseId = allExercises[nextIndex].id
+      const nextExerciseId = nextExercise.id
       const url = new URL(window.location.href)
       url.searchParams.set('exercise', nextExerciseId.toString())
       window.history.pushState({}, '', url.toString())
       
-      // Reset states for the new exercise
-      setAnswers({})
+      // Get questions from the JSONB field
+      const exerciseQuestions = nextExercise.questions as Question[]
+      
+      // Sort questions by order
+      const sortedQuestions = [...exerciseQuestions].sort((a, b) => a.question_order - b.question_order)
+      setQuestions(sortedQuestions)
+      
+      // Set time remaining based on the exercise's time limit (converting from seconds to minutes/seconds)
+      const totalSeconds = nextExercise.time_limit || 1500 // Default to 25 minutes if not specified
+      setTimeRemaining({
+        minutes: Math.floor(totalSeconds / 60),
+        seconds: totalSeconds % 60
+      })
+      
+      // Initialize empty answers for each question
+      const initialAnswers: Record<number | string, string> = {}
+      sortedQuestions.forEach(q => {
+        initialAnswers[q.id || `question-${q.question_order}`] = ""
+      })
+      setAnswers(initialAnswers)
+      
+      // Reset feedback states
       setFeedback("")
       setScore(null)
       setShowFeedback(false)
       setWordCount(0)
-      setExerciseChanged(true)
     }
   }
 

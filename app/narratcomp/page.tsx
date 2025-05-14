@@ -61,119 +61,129 @@ export default function SectionB() {
   // New state variables for handling multiple exercises
   const [allExercises, setAllExercises] = useState<NarrativeExercise[]>([])
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0)
-  const [exerciseChanged, setExerciseChanged] = useState(false)
   
-  // Fetch all available exercises on initial load
+  // Fetch all available exercises and their data on initial load
   useEffect(() => {
-    async function fetchAllExercises() {
+    async function fetchAllExercisesData() {
       try {
-        const { data, error } = await supabase
+        setLoading(true)
+        
+        // Fetch all narrative exercises
+        const { data: exercisesData, error: exercisesError } = await supabase
           .from('narrative_exercises')
           .select('*')
           .order('id')
         
-        if (error) throw error
+        if (exercisesError) throw exercisesError
         
-        if (data && data.length > 0) {
-          setAllExercises(data)
-        }
-      } catch (error) {
-        console.error('Error fetching all exercises:', error)
-      }
-    }
-    
-    fetchAllExercises()
-  }, [])
-  
-  // Fetch exercise and questions data from Supabase
-  useEffect(() => {
-    async function fetchExerciseData() {
-      try {
-        setLoading(true)
-        
-        // Check if there's a specific exercise ID in the URL
-        const searchParams = new URLSearchParams(window.location.search)
-        const exerciseId = searchParams.get('exercise')
-        
-        // Fetch the narrative exercise
-        let exerciseQuery = supabase
-          .from('narrative_exercises')
-          .select('*')
-        
-        // If we have a specific exercise ID, use it
-        if (exerciseId) {
-          exerciseQuery = exerciseQuery.eq('id', exerciseId)
-          // Find the index of this exercise in allExercises
-          if (allExercises.length > 0) {
-            const index = allExercises.findIndex(ex => ex.id.toString() === exerciseId)
+        if (exercisesData && exercisesData.length > 0) {
+          setAllExercises(exercisesData)
+          
+          // Check if there's a specific exercise ID in the URL
+          const searchParams = new URLSearchParams(window.location.search)
+          const exerciseId = searchParams.get('exercise')
+          
+          // Determine which exercise to display initially
+          let currentIndex = 0
+          if (exerciseId) {
+            const index = exercisesData.findIndex(ex => ex.id.toString() === exerciseId)
             if (index !== -1) {
-              setCurrentExerciseIndex(index)
+              currentIndex = index
             }
           }
-        } else if (allExercises.length > 0) {
-          // If no specific ID is provided, get the first exercise
-          exerciseQuery = exerciseQuery.eq('id', allExercises[0].id)
+          
+          setCurrentExerciseIndex(currentIndex)
+          
+          // Set the current exercise
+          const currentExercise = exercisesData[currentIndex]
+          setExercise(currentExercise)
+          
+          // Set time limit from exercise
+          if (currentExercise.time_limit) {
+            setTimeRemaining({ 
+              minutes: Math.floor(currentExercise.time_limit / 60), 
+              seconds: currentExercise.time_limit % 60 
+            })
+          }
+          
+          // Initialize answers and questions based on exercise type
+          if ((currentExercise.exercise_type === "questions" || currentExercise.exercise_type === "combined") && currentExercise.questions) {
+            // Get questions from the exercise data
+            const questionsData = currentExercise.questions || []
+            
+            // Convert array to record object with question id as key
+            const questionRecord = questionsData.reduce((acc, question) => {
+              // Make sure each question has an id property
+              const questionId = question.id || questionsData.indexOf(question) + 1;
+              acc[questionId] = {
+                ...question,
+                id: questionId, // Ensure the id property exists
+              };
+              return acc
+            }, {})
+            
+            setQuestions(questionRecord)
+            
+            // Initialize answers state with empty strings for each question
+            const initialAnswers = questionsData.reduce((acc, question) => {
+              const questionId = question.id || questionsData.indexOf(question) + 1;
+              acc[questionId] = ""
+              return acc
+            }, {})
+            
+            setAnswers(initialAnswers)
+            setTotalQuestions(questionsData.length)
+          }
+          
+          // Initialize flowchart answers if exercise has flowchart component (only for combined type)
+          if (currentExercise.exercise_type === "combined" && currentExercise.flowchart) {
+            // Initialize flowchart answers
+            const initialFlowchartAnswers = currentExercise.flowchart.sections.reduce((acc, section, idx) => {
+              const sectionId = section.id || `section-${idx}`;
+              acc[sectionId] = ""
+              return acc
+            }, {})
+            
+            // For combined exercises, merge with existing answers
+            setAnswers(prev => ({...prev, ...initialFlowchartAnswers}))
+            setTotalQuestions(prev => prev + currentExercise.flowchart.sections.length)
+          }
+          
+          // Check if we're resuming a saved session
+          const isResuming = searchParams.get('resume') === 'true'
+          if (isResuming) {
+            try {
+              // Check if this session is completed first
+              const recentSessionsStr = localStorage.getItem('recentSessions')
+              if (recentSessionsStr) {
+                const recentSessions = JSON.parse(recentSessionsStr)
+                const sectionSession = recentSessions.find(s => s.id === 'sectionB')
+                
+                // If session exists and is completed, redirect back to dashboard
+                if (sectionSession && sectionSession.status === "completed") {
+                  router.push('/')
+                  return
+                }
+              }
+              
+              const savedSession = localStorage.getItem('savedSession_sectionB')
+              
+              if (savedSession) {
+                const session = JSON.parse(savedSession)
+                
+                if (session.answers) {
+                  setAnswers(session.answers)
+                }
+                
+                if (session.timeRemaining) {
+                  setTimeRemaining(session.timeRemaining)
+                }
+              }
+            } catch (error) {
+              console.error('Error loading saved session:', error)
+            }
+          }
         }
-        
-        const { data: exerciseData, error: exerciseError } = await exerciseQuery.single()
-        
-        if (exerciseError) throw exerciseError
-        
-        setExercise(exerciseData)
-        
-        // Set time limit from exercise
-        if (exerciseData.time_limit) {
-          setTimeRemaining({ 
-            minutes: Math.floor(exerciseData.time_limit / 60), 
-            seconds: exerciseData.time_limit % 60 
-          })
-        }
-        
-        // Initialize answers based on exercise type
-        if ((exerciseData.exercise_type === "questions" || exerciseData.exercise_type === "combined") && exerciseData.questions) {
-          // Get questions from the exercise data
-          const questionsData = exerciseData.questions || []
-          
-          // Convert array to record object with question id as key
-          const questionRecord = questionsData.reduce((acc, question) => {
-            // Make sure each question has an id property
-            const questionId = question.id || questionsData.indexOf(question) + 1;
-            acc[questionId] = {
-              ...question,
-              id: questionId, // Ensure the id property exists
-            };
-            return acc
-          }, {})
-          
-          setQuestions(questionRecord)
-          
-          // Initialize answers state with empty strings for each question
-          const initialAnswers = questionsData.reduce((acc, question) => {
-            const questionId = question.id || questionsData.indexOf(question) + 1;
-            acc[questionId] = ""
-            return acc
-          }, {})
-          
-          setAnswers(initialAnswers)
-          setTotalQuestions(questionsData.length)
-        }
-        
-        // Initialize flowchart answers if exercise has flowchart component (only for combined type)
-        if (exerciseData.exercise_type === "combined" && exerciseData.flowchart) {
-          // Initialize flowchart answers
-          const initialFlowchartAnswers = exerciseData.flowchart.sections.reduce((acc, section, idx) => {
-            const sectionId = section.id || `section-${idx}`;
-            acc[sectionId] = ""
-            return acc
-          }, {})
-          
-          // For combined exercises, merge with existing answers
-          setAnswers(prev => ({...prev, ...initialFlowchartAnswers}))
-          setTotalQuestions(prev => prev + exerciseData.flowchart.sections.length)
-        }
-        
-        setExerciseChanged(false)
-        
       } catch (error) {
         console.error('Error fetching exercise data:', error)
       } finally {
@@ -181,49 +191,7 @@ export default function SectionB() {
       }
     }
     
-    if (allExercises.length > 0 || exerciseChanged) {
-      fetchExerciseData()
-    }
-  }, [allExercises, exerciseChanged])
-  
-  // Load saved progress when component mounts
-  useEffect(() => {
-    // Check if we're resuming a saved session
-    const searchParams = new URLSearchParams(window.location.search)
-    const isResuming = searchParams.get('resume') === 'true'
-    
-    if (isResuming) {
-      try {
-        // Check if this session is completed first
-        const recentSessionsStr = localStorage.getItem('recentSessions')
-        if (recentSessionsStr) {
-          const recentSessions = JSON.parse(recentSessionsStr)
-          const sectionSession = recentSessions.find(s => s.id === 'sectionB')
-          
-          // If session exists and is completed, redirect back to dashboard
-          if (sectionSession && sectionSession.status === "completed") {
-            router.push('/')
-            return
-          }
-        }
-        
-        const savedSession = localStorage.getItem('savedSession_sectionB')
-        
-        if (savedSession) {
-          const session = JSON.parse(savedSession)
-          
-          if (session.answers) {
-            setAnswers(session.answers)
-          }
-          
-          if (session.timeRemaining) {
-            setTimeRemaining(session.timeRemaining)
-          }
-        }
-      } catch (error) {
-        console.error('Error loading saved session:', error)
-      }
-    }
+    fetchAllExercisesData()
   }, [router])
   
   // Start the timer countdown
@@ -542,18 +510,75 @@ export default function SectionB() {
       const nextIndex = currentExerciseIndex + 1
       setCurrentExerciseIndex(nextIndex)
       
+      // Get the next exercise
+      const nextExercise = allExercises[nextIndex]
+      setExercise(nextExercise)
+      
       // Update URL without refreshing the page
-      const nextExerciseId = allExercises[nextIndex].id
+      const nextExerciseId = nextExercise.id
       const url = new URL(window.location.href)
       url.searchParams.set('exercise', nextExerciseId.toString())
       window.history.pushState({}, '', url.toString())
       
-      // Reset states for the new exercise
-      setAnswers({})
+      // Set time limit from exercise
+      if (nextExercise.time_limit) {
+        setTimeRemaining({ 
+          minutes: Math.floor(nextExercise.time_limit / 60), 
+          seconds: nextExercise.time_limit % 60 
+        })
+      }
+      
+      // Reset answers and questions for the new exercise
+      if ((nextExercise.exercise_type === "questions" || nextExercise.exercise_type === "combined") && nextExercise.questions) {
+        // Get questions from the exercise data
+        const questionsData = nextExercise.questions || []
+        
+        // Convert array to record object with question id as key
+        const questionRecord = questionsData.reduce((acc, question) => {
+          // Make sure each question has an id property
+          const questionId = question.id || questionsData.indexOf(question) + 1;
+          acc[questionId] = {
+            ...question,
+            id: questionId, // Ensure the id property exists
+          };
+          return acc
+        }, {})
+        
+        setQuestions(questionRecord)
+        
+        // Initialize answers state with empty strings for each question
+        const initialAnswers = questionsData.reduce((acc, question) => {
+          const questionId = question.id || questionsData.indexOf(question) + 1;
+          acc[questionId] = ""
+          return acc
+        }, {})
+        
+        setAnswers(initialAnswers)
+        setTotalQuestions(questionsData.length)
+        
+        // Initialize flowchart answers if exercise has flowchart component (only for combined type)
+        if (nextExercise.exercise_type === "combined" && nextExercise.flowchart) {
+          // Initialize flowchart answers
+          const initialFlowchartAnswers = nextExercise.flowchart.sections.reduce((acc, section, idx) => {
+            const sectionId = section.id || `section-${idx}`;
+            acc[sectionId] = ""
+            return acc
+          }, {})
+          
+          // For combined exercises, merge with existing answers
+          setAnswers(prev => ({...prev, ...initialFlowchartAnswers}))
+          setTotalQuestions(prev => prev + nextExercise.flowchart.sections.length)
+        }
+      } else {
+        setQuestions({})
+        setAnswers({})
+        setTotalQuestions(0)
+      }
+      
+      // Reset feedback states
       setFeedback("")
       setScore(null)
       setShowFeedback(false)
-      setExerciseChanged(true)
     }
   }
   

@@ -27,107 +27,93 @@ export default function SectionA() {
   
   // New state variables for handling multiple exercises
   const [allExercises, setAllExercises] = useState<VisualExercise[]>([])
+  const [allQuestions, setAllQuestions] = useState<Record<number, Record<number, Question>>>({})
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0)
-  const [exerciseChanged, setExerciseChanged] = useState(false)
   
-  // Fetch all available exercises on initial load
+  // Fetch all available exercises and their questions on initial load
   useEffect(() => {
-    async function fetchAllExercises() {
+    async function fetchAllExercisesAndQuestions() {
       try {
-        const { data, error } = await supabase
+        setLoading(true)
+        
+        // Fetch all exercises
+        const { data: exercisesData, error: exercisesError } = await supabase
           .from('visual_exercises')
           .select('*')
           .order('id')
         
-        if (error) throw error
+        if (exercisesError) throw exercisesError
         
-        if (data && data.length > 0) {
-          setAllExercises(data)
-        }
-      } catch (error) {
-        console.error('Error fetching all exercises:', error)
-      }
-    }
-    
-    fetchAllExercises()
-  }, [])
-  
-  // Fetch exercise and questions data from Supabase
-  useEffect(() => {
-    async function fetchExerciseData() {
-      try {
-        setLoading(true)
-        
-        // Check if there's a specific exercise ID in the URL
-        const searchParams = new URLSearchParams(window.location.search)
-        const exerciseId = searchParams.get('exercise')
-        
-        // Fetch the visual exercise
-        let exerciseQuery = supabase
-          .from('visual_exercises')
-          .select('*')
-        
-        // If we have a specific exercise ID, use it
-        if (exerciseId) {
-          exerciseQuery = exerciseQuery.eq('id', exerciseId)
-          // Find the index of this exercise in allExercises
-          if (allExercises.length > 0) {
-            const index = allExercises.findIndex(ex => ex.id.toString() === exerciseId)
+        if (exercisesData && exercisesData.length > 0) {
+          setAllExercises(exercisesData)
+          
+          // Fetch questions for all exercises
+          const questionsObject = {}
+          
+          // Use Promise.all to fetch questions for all exercises concurrently
+          await Promise.all(
+            exercisesData.map(async (exerciseItem) => {
+              const { data: questionsData, error: questionsError } = await supabase
+                .from('questions')
+                .select('*')
+                .eq('exercise_id', exerciseItem.id)
+                .order('question_order', { ascending: true })
+              
+              if (questionsError) throw questionsError
+              
+              // Convert array to record object with question id as key
+              const questionRecord = questionsData.reduce((acc, question) => {
+                acc[question.id] = question
+                return acc
+              }, {})
+              
+              questionsObject[exerciseItem.id] = questionRecord
+            })
+          )
+          
+          setAllQuestions(questionsObject)
+          
+          // Check if there's a specific exercise ID in the URL
+          const searchParams = new URLSearchParams(window.location.search)
+          const exerciseId = searchParams.get('exercise')
+          
+          let currentIndex = 0
+          
+          // If we have a specific exercise ID, set it as current
+          if (exerciseId) {
+            const index = exercisesData.findIndex(ex => ex.id.toString() === exerciseId)
             if (index !== -1) {
-              setCurrentExerciseIndex(index)
+              currentIndex = index
             }
           }
-        } else if (allExercises.length > 0) {
-          // If no specific ID is provided, get the first exercise
-          exerciseQuery = exerciseQuery.eq('id', allExercises[0].id)
-        } else {
-          // Fallback to the exercise with the title
-          exerciseQuery = exerciseQuery.eq('title', 'Visual Text Comprehension')
+          
+          // Set current exercise
+          setCurrentExerciseIndex(currentIndex)
+          setExercise(exercisesData[currentIndex])
+          
+          // Set questions for current exercise
+          const currentExerciseId = exercisesData[currentIndex].id
+          setQuestions(questionsObject[currentExerciseId] || {})
+          
+          // Initialize answers state with empty strings for each question
+          if (questionsObject[currentExerciseId]) {
+            const initialAnswers = Object.values(questionsObject[currentExerciseId]).reduce((acc, question) => {
+              acc[question.id] = ""
+              return acc
+            }, {})
+            
+            setAnswers(initialAnswers)
+          }
         }
-        
-        const { data: exerciseData, error: exerciseError } = await exerciseQuery.single()
-        
-        if (exerciseError) throw exerciseError
-        
-        setExercise(exerciseData)
-        
-        // Fetch questions for this exercise
-        const { data: questionsData, error: questionsError } = await supabase
-          .from('questions')
-          .select('*')
-          .eq('exercise_id', exerciseData.id)
-          .order('question_order', { ascending: true })
-        
-        if (questionsError) throw questionsError
-        
-        // Convert array to record object with question id as key
-        const questionRecord = questionsData.reduce((acc, question) => {
-          acc[question.id] = question
-          return acc
-        }, {})
-        
-        setQuestions(questionRecord)
-        
-        // Initialize answers state with empty strings for each question
-        const initialAnswers = questionsData.reduce((acc, question) => {
-          acc[question.id] = ""
-          return acc
-        }, {})
-        
-        setAnswers(initialAnswers)
-        setExerciseChanged(false)
-        
       } catch (error) {
-        console.error('Error fetching exercise data:', error)
+        console.error('Error fetching exercises and questions:', error)
       } finally {
         setLoading(false)
       }
     }
     
-    if (allExercises.length > 0 || exerciseChanged) {
-      fetchExerciseData()
-    }
-  }, [allExercises, exerciseChanged])
+    fetchAllExercisesAndQuestions()
+  }, [])
   
   // Load saved progress when component mounts
   useEffect(() => {
@@ -382,18 +368,35 @@ export default function SectionA() {
       const nextIndex = currentExerciseIndex + 1
       setCurrentExerciseIndex(nextIndex)
       
+      // Get the next exercise
+      const nextExercise = allExercises[nextIndex]
+      setExercise(nextExercise)
+      
+      // Get questions for the next exercise
+      setQuestions(allQuestions[nextExercise.id] || {})
+      
       // Update URL without refreshing the page
-      const nextExerciseId = allExercises[nextIndex].id
+      const nextExerciseId = nextExercise.id
       const url = new URL(window.location.href)
       url.searchParams.set('exercise', nextExerciseId.toString())
       window.history.pushState({}, '', url.toString())
       
       // Reset states for the new exercise
-      setAnswers({})
+      // Initialize answers state with empty strings for each question
+      if (allQuestions[nextExercise.id]) {
+        const initialAnswers = Object.values(allQuestions[nextExercise.id]).reduce((acc, question) => {
+          acc[question.id] = ""
+          return acc
+        }, {})
+        
+        setAnswers(initialAnswers)
+      } else {
+        setAnswers({})
+      }
+      
       setFeedback("")
       setScore(null)
       setShowFeedback(false)
-      setExerciseChanged(true)
     }
   }
 
