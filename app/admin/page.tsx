@@ -111,9 +111,11 @@ export default function AdminPanel() {
       correct_answer?: string;
       isNew?: boolean;
     }[];
+    question_text?: string; // Add question text field for flowchart
   }>({
     options: [],
-    sections: []
+    sections: [],
+    question_text: "Complete the flowchart by choosing one word from the box to summarise the main thoughts or feelings presented in each part of the text." // Default flowchart question
   })
 
   // Form states for non-narrative exercise
@@ -736,7 +738,8 @@ export default function AdminPanel() {
           sections: exercise.flowchart.sections.map(s => ({
             ...s,
             isNew: false
-          }))
+          })),
+          question_text: exercise.flowchart.question_text || "Complete the flowchart by choosing one word from the box to summarise the main thoughts or feelings presented in each part of the text."
         });
       } else {
         // Initialize with default flowchart if none exists
@@ -749,14 +752,16 @@ export default function AdminPanel() {
               paragraphs: "1-2",
               isNew: true
             }
-          ]
+          ],
+          question_text: "Complete the flowchart by choosing one word from the box to summarise the main thoughts or feelings presented in each part of the text."
         });
       }
     } else {
       // Reset flowchart if not needed
       setFormFlowchart({
         options: [],
-        sections: []
+        sections: [],
+        question_text: "Complete the flowchart by choosing one word from the box to summarise the main thoughts or feelings presented in each part of the text."
       });
     }
     
@@ -899,7 +904,8 @@ export default function AdminPanel() {
             name: s.name,
             paragraphs: s.paragraphs,
             correct_answer: s.correct_answer
-          }))
+          })),
+          question_text: formFlowchart.question_text
         };
         
         // Add both to exercise data
@@ -1970,6 +1976,17 @@ export default function AdminPanel() {
                         <p className="text-sm text-gray-500 mb-4">
                           Add words that students will choose from to complete the flowchart.
                         </p>
+                        
+                        <div className="mb-4">
+                          <label className="block text-sm font-medium text-gray-700">Flowchart Question Text</label>
+                          <textarea
+                            value={formFlowchart.question_text || ""}
+                            onChange={(e) => setFormFlowchart(prev => ({ ...prev, question_text: e.target.value }))}
+                            rows={2}
+                            className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                            placeholder="Enter instruction text for the flowchart section"
+                          />
+                        </div>
                         
                         <div className="flex flex-wrap gap-2 mb-4">
                           {formFlowchart.options.map((option, index) => (

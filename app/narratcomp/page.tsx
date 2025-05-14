@@ -35,6 +35,7 @@ interface Question {
 interface FlowChartExercise {
   options: string[]
   sections: FlowChartSection[]
+  question_text?: string // Add question text field
 }
 
 interface FlowChartSection {
@@ -809,7 +810,7 @@ export default function SectionB() {
                     </div>
                     
                     <p className="mb-6 text-gray-700">
-                      {exercise.description || "Complete the flowchart by choosing one word from the box to summarise the main thoughts or feelings presented in each part of the text."}
+                      {exercise.flowchart.question_text || exercise.description || "Complete the flowchart by choosing one word from the box to summarise the main thoughts or feelings presented in each part of the text."}
                     </p>
                     
                     <React.Fragment key="flowchart-container">
