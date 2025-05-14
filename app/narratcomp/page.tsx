@@ -17,9 +17,10 @@ interface NarrativeExercise {
   story_text: string
   time_limit: number
   description?: string
-  exercise_type: "questions" | "flowchart" // Add exercise type
+  exercise_type: "questions" | "combined" // Only questions and combined types
   questions?: Question[]
   flowchart?: FlowChartExercise // Add flowchart data
+  has_flowchart?: boolean // Flag to indicate if exercise has flowchart component
 }
 
 interface Question {
@@ -129,7 +130,7 @@ export default function SectionB() {
         }
         
         // Initialize answers based on exercise type
-        if (exerciseData.exercise_type === "questions" && exerciseData.questions) {
+        if ((exerciseData.exercise_type === "questions" || exerciseData.exercise_type === "combined") && exerciseData.questions) {
           // Get questions from the exercise data
           const questionsData = exerciseData.questions || []
           
@@ -155,16 +156,20 @@ export default function SectionB() {
           
           setAnswers(initialAnswers)
           setTotalQuestions(questionsData.length)
-        } 
-        else if (exerciseData.exercise_type === "flowchart" && exerciseData.flowchart) {
+        }
+        
+        // Initialize flowchart answers if exercise has flowchart component (only for combined type)
+        if (exerciseData.exercise_type === "combined" && exerciseData.flowchart) {
           // Initialize flowchart answers
           const initialFlowchartAnswers = exerciseData.flowchart.sections.reduce((acc, section, idx) => {
-            acc[section.id || `section-${idx}`] = ""
+            const sectionId = section.id || `section-${idx}`;
+            acc[sectionId] = ""
             return acc
           }, {})
           
-          setAnswers(initialFlowchartAnswers)
-          setTotalQuestions(exerciseData.flowchart.sections.length)
+          // For combined exercises, merge with existing answers
+          setAnswers(prev => ({...prev, ...initialFlowchartAnswers}))
+          setTotalQuestions(prev => prev + exerciseData.flowchart.sections.length)
         }
         
         setExerciseChanged(false)
@@ -344,17 +349,74 @@ export default function SectionB() {
   
         result = await evaluateAnswers(exercise.story_text, questionsWithAnswers);
       } 
-      else if (exercise.exercise_type === "flowchart") {
-        // For the flowchart, we'll need a different evaluation function
-        // This is a placeholder - you'd need to implement the actual evaluation
-        // For now, we'll mock a result
-        result = {
-          feedback: "Your flowchart answers have been evaluated.",
-          score: 75 // Mock score
-        };
+      else if (exercise.exercise_type === "combined") {
+        // For combined exercises, evaluate both parts
+        let questionScore = 0;
+        let flowchartScore = 0;
+        let questionFeedback = "";
+        let flowchartFeedback = "";
         
-        // Here you would create an actual evaluation function for flowchart exercises
-        // similar to evaluateAnswers but adapted for the flowchart format
+        // Evaluate questions if present
+        if (exercise.questions && exercise.questions.length > 0) {
+          const questionsWithAnswers: QuestionWithAnswer[] = Object.values(questions).map(q => ({
+            question: q.question_text,
+            idealAnswer: q.ideal_answer,
+            userAnswer: answers[q.id] || ''
+          }));
+          
+          const questionResult = await evaluateAnswers(exercise.story_text, questionsWithAnswers);
+          questionScore = typeof questionResult.score === 'number' ? questionResult.score : Number(questionResult.score) || 0;
+          questionFeedback = questionResult.feedback || "";
+        }
+        
+        // Evaluate flowchart if present
+        if (exercise.flowchart) {
+          // Implement basic evaluation for flowchart answers
+          const flowchartSections = exercise.flowchart.sections;
+          const correctAnswers = flowchartSections.filter((section, idx) => {
+            const sectionId = section.id || `section-${idx}`;
+            const userAnswer = answers[sectionId] || '';
+            // If there's a correct_answer property, compare with it
+            if (section.correct_answer) {
+              return userAnswer.trim().toLowerCase() === section.correct_answer.trim().toLowerCase();
+            }
+            // Otherwise check if answer is one of the options
+            return exercise.flowchart.options.some(option => 
+              userAnswer.trim().toLowerCase() === option.trim().toLowerCase()
+            );
+          });
+          
+          // Calculate score as percentage of correct answers
+          const correctCount = correctAnswers.length;
+          const totalCount = flowchartSections.length;
+          flowchartScore = totalCount > 0 ? Math.round((correctCount / totalCount) * 100) : 0;
+          
+          // Generate feedback for flowchart answers
+          flowchartFeedback = `You correctly answered ${correctCount} out of ${totalCount} flowchart sections.`;
+          
+          if (correctCount === totalCount) {
+            flowchartFeedback += "\n\nExcellent work on the flowchart! You've correctly identified all the main elements.";
+          } else if (correctCount > totalCount / 2) {
+            flowchartFeedback += "\n\nGood work on the flowchart. You've correctly identified most of the main elements.";
+          } else {
+            flowchartFeedback += "\n\nYou need to work on identifying the main elements in the text. Consider how each section connects to the key ideas.";
+          }
+        }
+        
+        // Combine scores and feedback
+        const totalQuestionWeight = exercise.questions ? 0.7 : 0; // 70% weight for questions if present
+        const totalFlowchartWeight = exercise.flowchart ? (exercise.questions ? 0.3 : 1) : 0; // 30% weight for flowchart if questions present, 100% otherwise
+        
+        const combinedScore = (questionScore * totalQuestionWeight) + (flowchartScore * totalFlowchartWeight);
+        const combinedFeedback = [
+          exercise.questions && exercise.questions.length > 0 ? "Questions Feedback:\n" + questionFeedback : "",
+          exercise.flowchart ? "Flowchart Feedback:\n" + flowchartFeedback : ""
+        ].filter(Boolean).join("\n\n");
+        
+        result = {
+          feedback: combinedFeedback,
+          score: combinedScore
+        };
       }
       
       // Check that we have valid feedback and score
@@ -368,10 +430,36 @@ export default function SectionB() {
             section: "B",
             name: "Narrative Comprehension",
             answers,
-            questions: exercise.exercise_type === "questions" ? questions : exercise.flowchart,
+            questions: exercise.exercise_type === "questions" 
+              ? questions 
+              : {
+                  // For combined type, include both question and flowchart data
+                  ...questions,
+                  // Add flowchart sections as pseudo-questions for the feedback page
+                  ...exercise.flowchart?.sections.reduce((acc, section, idx) => {
+                    const sectionId = section.id || `section-${idx}`;
+                    acc[`flowchart-${sectionId}`] = {
+                      id: `flowchart-${sectionId}`,
+                      question_text: `Flowchart: ${section.name}`,
+                      ideal_answer: section.correct_answer || "Select from available options",
+                      question_order: idx + 1000, // Use high numbers to separate from regular questions
+                      mark: answers[sectionId] && (
+                        section.correct_answer 
+                          ? answers[sectionId].trim().toLowerCase() === section.correct_answer.trim().toLowerCase()
+                          : exercise.flowchart.options.some(option => answers[sectionId].trim().toLowerCase() === option.trim().toLowerCase())
+                      ) ? 1 : 0,
+                      marks: 1,
+                      isFlowchart: true // Flag to identify flowchart items in the feedback
+                    };
+                    return acc;
+                  }, {}) || {}
+              },
             feedback: result.feedback,
             score: finalScore,
-            lastSaved: new Date().toISOString()
+            lastSaved: new Date().toISOString(),
+            exerciseType: exercise.exercise_type, // Save exercise type for the feedback page
+            // Save flowchart options if present
+            flowchartOptions: exercise.flowchart?.options || []
           }
           
           // Save current session with feedback and score
@@ -633,14 +721,12 @@ export default function SectionB() {
             </div>
           </div>
         ) : (
-          /* Flow Chart Exercise UI */
+          /* Combined Exercise UI - Both Questions and Flowchart */
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-[calc(100vh-13rem)]">
             {/* Left panel - Story Display */}
             <div className="overflow-y-auto pr-2 pb-2">
               <div className="bg-white rounded-2xl shadow-sm p-6 h-auto">
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-bold text-gray-800">{exercise.title}</h2>
-                </div>
+                <h2 className="text-xl font-bold text-gray-800 mb-4">{exercise.title}</h2>
                 <div className="whitespace-pre-wrap prose max-w-none text-gray-700">
                   <ReactMarkdown>
                     {exercise.story_text}
@@ -649,73 +735,108 @@ export default function SectionB() {
               </div>
             </div>
 
-            {/* Right panel - Flow Chart Exercise */}
-            <div className="overflow-y-auto pr-2 pb-2">
-              <div className="bg-white rounded-2xl shadow-sm p-6">
-                <div className="flex justify-between items-center mb-4">
-                  <div className="flex items-center">
-                    <span className="flex items-center justify-center w-6 h-6 bg-amber-100 text-amber-800 rounded-full mr-2">1</span>
-                    <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">Flow Chart</span>
-                  </div>
-                  <button className="text-gray-400 hover:text-gray-600">
-                    <HelpCircle size={18} />
-                  </button>
-                </div>
-                
-                <p className="mb-6 text-gray-700">
-                  {exercise.description || "Complete the flowchart by choosing one word from the box to summarise the main thoughts or feelings presented in each part of the text."}
-                </p>
-                
-                {exercise.flowchart && (
-                  <React.Fragment key="flowchart-container">
-                    {/* Options grid */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-6">
-                      {exercise.flowchart.options.map((option, index) => (
-                        <div 
-                          key={`flowchart-option-${index}`} 
-                          className={`p-2 border rounded-md text-center text-gray-800 ${
-                            index >= exercise.flowchart.options.length - 2 ? 'col-span-1 sm:col-span-2' : ''
-                          }`}
-                        >
-                          {option}
-                        </div>
-                      ))}
-                    </div>
-                    
-                    {/* Flow chart sections */}
-                    {exercise.flowchart.sections.map((section, idx) => (
-                      <div key={`flowchart-section-${section.id || idx}`} className="mb-8">
-                        <div className="mb-1 font-medium text-gray-800">
-                          {section.name}: ({String.fromCharCode(105 + idx)})
-                        </div>
-                        <input 
-                          type="text" 
-                          className="w-full p-2 border rounded-md text-gray-800"
-                          placeholder="Enter word here"
-                          value={answers[section.id || `section-${idx}`] || ''}
-                          onChange={(e) => {
-                            // Use a unique identifier for each section
-                            const sectionKey = section.id || `section-${idx}`;
-                            setAnswers(prev => ({
-                              ...prev,
-                              [sectionKey]: e.target.value
-                            }));
-                          }}
-                        />
-                        
-                        {/* Add arrow between sections except after the last one */}
-                        {idx < exercise.flowchart.sections.length - 1 && (
-                          <div className="flex justify-center my-4">
-                            <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path>
-                            </svg>
+            {/* Right panel - Questions and Flowchart */}
+            <div className="overflow-y-auto pr-2 pb-2 space-y-6">
+              {/* Questions Section */}
+              {exercise.questions && exercise.questions.length > 0 && (
+                <div>
+                  <h3 className="text-lg font-medium text-gray-800 mb-4">Part 1: Questions</h3>
+                  <div className="space-y-6 mb-6">
+                    {questionIds.map(questionId => (
+                      <div key={questionId} className="bg-white rounded-2xl shadow-sm p-6">
+                        <div className="flex flex-wrap items-start gap-4 mb-4">
+                          <div className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-amber-100 text-amber-600 font-medium">
+                            {questions[questionId] && (questions[questionId].question_order || questionId)}
                           </div>
-                        )}
+                          <h2 className="flex-1 text-lg font-medium text-gray-800">{questions[questionId] && questions[questionId].question_text}</h2>
+                          <div className="flex-shrink-0 text-sm text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded-md">
+                            {questions[questionId] && (questions[questionId].marks || 1)} {questions[questionId] && ((questions[questionId].marks || 1) === 1 ? 'mark' : 'marks')}
+                          </div>
+                        </div>
+                        <div>
+                          {questions[questionId] && (
+                            <textarea
+                              className="w-full h-24 p-4 border text-gray-700 border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              placeholder="Type your answer here..."
+                              value={answers[questionId] || ''}
+                              onChange={(e) => handleAnswerChange(questionId, e.target.value)}
+                            />
+                          )}
+                        </div>
                       </div>
                     ))}
-                  </React.Fragment>
-                )}
-              </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Flowchart Section */}
+              {exercise.flowchart && (
+                <div>
+                  <h3 className="text-lg font-medium text-gray-800 mb-4">Part 2: Flow Chart</h3>
+                  <div className="bg-white rounded-2xl shadow-sm p-6">
+                    <div className="flex justify-between items-center mb-4">
+                      <div className="flex items-center">
+                        <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">Flow Chart</span>
+                      </div>
+                      <button className="text-gray-400 hover:text-gray-600">
+                        <HelpCircle size={18} />
+                      </button>
+                    </div>
+                    
+                    <p className="mb-6 text-gray-700">
+                      {exercise.description || "Complete the flowchart by choosing one word from the box to summarise the main thoughts or feelings presented in each part of the text."}
+                    </p>
+                    
+                    <React.Fragment key="flowchart-container">
+                      {/* Options grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-6">
+                        {exercise.flowchart.options.map((option, index) => (
+                          <div 
+                            key={`flowchart-option-${index}`} 
+                            className={`p-2 border rounded-md text-center text-gray-800 ${
+                              index >= exercise.flowchart.options.length - 2 ? 'col-span-1 sm:col-span-2' : ''
+                            }`}
+                          >
+                            {option}
+                          </div>
+                        ))}
+                      </div>
+                      
+                      {/* Flow chart sections */}
+                      {exercise.flowchart.sections.map((section, idx) => (
+                        <div key={`flowchart-section-${section.id || idx}`} className="mb-8">
+                          <div className="mb-1 font-medium text-gray-800">
+                            {section.name}: ({String.fromCharCode(105 + idx)})
+                          </div>
+                          <input 
+                            type="text" 
+                            className="w-full p-2 border rounded-md text-gray-800"
+                            placeholder="Enter word here"
+                            value={answers[section.id || `section-${idx}`] || ''}
+                            onChange={(e) => {
+                              // Use a unique identifier for each section
+                              const sectionKey = section.id || `section-${idx}`;
+                              setAnswers(prev => ({
+                                ...prev,
+                                [sectionKey]: e.target.value
+                              }));
+                            }}
+                          />
+                          
+                          {/* Add arrow between sections except after the last one */}
+                          {idx < exercise.flowchart.sections.length - 1 && (
+                            <div className="flex justify-center my-4">
+                              <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path>
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </React.Fragment>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

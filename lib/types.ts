@@ -20,7 +20,7 @@ export interface NarrativeExercise {
   story_text: string;
   description?: string;
   time_limit: number;
-  exercise_type?: "questions" | "flowchart";
+  exercise_type?: "questions" | "combined";
   questions?: NarrativeQuestion[];
   flowchart?: FlowChartExercise;
 }

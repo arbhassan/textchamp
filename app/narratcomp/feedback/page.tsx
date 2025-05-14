@@ -43,7 +43,8 @@ const ScoreBadge = ({ score, total, maxScore }) => {
 // Areas for Improvement Component
 const AreasForImprovement = ({ questions }) => {
   // Get incorrect answers - questions with mark of 0
-  const incorrectQuestions = Object.values(questions).filter(q => q.mark === 0);
+  const incorrectQuestions = Object.values(questions)
+    .filter(q => q.mark === 0 && !q.isFlowchart); // Filter out flowchart items for this section
   
   if (incorrectQuestions.length === 0) {
     return (
@@ -80,6 +81,67 @@ const AreasForImprovement = ({ questions }) => {
   );
 };
 
+// Flowchart Areas for Improvement Component
+const FlowchartAreasForImprovement = ({ questions, options }) => {
+  // Get only flowchart questions
+  const flowchartQuestions = Object.values(questions).filter(q => q.isFlowchart);
+  
+  // Get incorrect answers - flowchart items with mark of 0
+  const incorrectQuestions = flowchartQuestions.filter(q => q.mark === 0);
+  
+  if (flowchartQuestions.length === 0) {
+    return null; // No flowchart questions to display
+  }
+  
+  if (incorrectQuestions.length === 0) {
+    return (
+      <div className="bg-green-50 p-4 rounded-lg mt-4 mb-6">
+        <div className="flex items-center gap-2">
+          <CheckCircle className="text-green-600" size={20} />
+          <h5 className="text-green-800 font-medium">Perfect Flowchart!</h5>
+        </div>
+        <p className="text-green-700 mt-2 text-sm">
+          Excellent work! You completed the flowchart correctly.
+        </p>
+      </div>
+    );
+  }
+  
+  return (
+    <div className="bg-amber-50 p-4 rounded-lg mt-4 mb-6">
+      <div className="flex items-center gap-2">
+        <AlertTriangle className="text-amber-600" size={20} />
+        <h5 className="text-amber-800 font-medium">Flowchart Areas for Improvement</h5>
+      </div>
+      
+      {options && options.length > 0 && (
+        <div className="mt-2 mb-3">
+          <p className="text-sm text-amber-800 font-medium mb-1">Available options:</p>
+          <div className="flex flex-wrap gap-2">
+            {options.map((option, idx) => (
+              <span key={idx} className="px-2 py-1 bg-white border border-amber-200 rounded-md text-xs text-amber-700">
+                {option}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      
+      <div className="mt-3 space-y-2">
+        {incorrectQuestions.map((question, index) => (
+          <div key={question.id || `flowchart-${index}`} className="flex items-start gap-2">
+            <XCircle className="text-red-500 mt-0.5 flex-shrink-0" size={16} />
+            <div>
+              <span className="text-sm font-medium text-gray-700">{question.question_text}:</span>
+              <p className="text-sm text-gray-600">Your answer was incorrect</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 export default function NarrativeCompFeedback() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
@@ -91,6 +153,8 @@ export default function NarrativeCompFeedback() {
   const [feedback, setFeedback] = useState("")
   const [markSummary, setMarkSummary] = useState({ total: 0, correct: 0 })
   const [totalMarks, setTotalMarks] = useState({ possible: 0, earned: 0 })
+  const [exerciseType, setExerciseType] = useState("questions")
+  const [flowchartOptions, setFlowchartOptions] = useState([])
   
   // Load test data when component mounts
   useEffect(() => {
@@ -103,6 +167,12 @@ export default function NarrativeCompFeedback() {
         
         // Load answers
         if (session.answers) setAnswers(session.answers)
+        
+        // Set exercise type
+        if (session.exerciseType) setExerciseType(session.exerciseType)
+        
+        // Set flowchart options if available
+        if (session.flowchartOptions) setFlowchartOptions(session.flowchartOptions)
         
         // Load questions - these need to be retrieved from the session too
         if (session.questions) {
@@ -119,8 +189,11 @@ export default function NarrativeCompFeedback() {
           
           setQuestions(questionsWithMarks);
           
-          // Update mark summary
-          const marks = Object.values(questionsWithMarks).reduce(
+          // Get normal questions (excluding flowchart items)
+          const normalQuestions = Object.values(questionsWithMarks).filter(q => !q.isFlowchart);
+          
+          // Update mark summary for normal questions
+          const marks = normalQuestions.reduce(
             (summary, q) => ({
               total: summary.total + 1,
               correct: summary.correct + (q.mark || 0)
@@ -131,11 +204,11 @@ export default function NarrativeCompFeedback() {
           setMarkSummary(marks);
           
           // Calculate total marks possible and earned
-          const totalPossibleMarks = Object.values(questionsWithMarks).reduce(
+          const totalPossibleMarks = normalQuestions.reduce(
             (sum, q) => sum + (q.marks || 1), 0
           );
           
-          const totalEarnedMarks = Object.values(questionsWithMarks).reduce(
+          const totalEarnedMarks = normalQuestions.reduce(
             (sum, q) => sum + ((q.mark > 0) ? (q.marks || 1) : 0), 0
           );
           
@@ -199,6 +272,15 @@ ${feedbackText}
     
     return markSummaryText;
   }
+  
+  // Separate flowchart questions from normal questions
+  const getNormalQuestions = () => {
+    return Object.values(questions).filter(q => !q.isFlowchart);
+  };
+  
+  const getFlowchartQuestions = () => {
+    return Object.values(questions).filter(q => q.isFlowchart);
+  };
   
   if (loading) {
     return (
@@ -295,11 +377,13 @@ ${feedbackText}
         <div className="bg-white rounded-3xl shadow-sm p-8">
           <h3 className="text-lg font-bold text-orange-800 mb-4">Narrative Comprehension Questions</h3>
                
-          {Object.values(questions).length > 0 && (
+          {/* Show improvement areas for normal questions */}
+          {getNormalQuestions().length > 0 && (
             <AreasForImprovement questions={questions} />
           )}
           
-          {Object.values(questions).map((question, index) => (
+          {/* Show normal questions */}
+          {getNormalQuestions().map((question, index) => (
             <div key={index} className="mb-8 p-4 border border-gray-100 rounded-lg bg-gray-50">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
@@ -351,6 +435,76 @@ ${feedbackText}
               </div>
             </div>
           ))}
+          
+          {/* Flowchart Feedback Section */}
+          {exerciseType === "combined" && getFlowchartQuestions().length > 0 && (
+            <div className="mt-8 border-t pt-8">
+              <h3 className="text-lg font-bold text-blue-800 mb-4">Flowchart Results</h3>
+              
+              {/* Show improvement areas for flowchart questions */}
+              <FlowchartAreasForImprovement questions={questions} options={flowchartOptions} />
+              
+              {/* Display flowchart questions and answers */}
+              <div className="mt-4 bg-blue-50 p-4 rounded-lg">
+                <h4 className="font-medium text-blue-800 mb-3">Flowchart Answers</h4>
+                
+                {flowchartOptions && flowchartOptions.length > 0 && (
+                  <div className="mb-4">
+                    <h5 className="text-sm font-medium text-gray-700 mb-2">Available Options:</h5>
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {flowchartOptions.map((option, idx) => (
+                        <div 
+                          key={`option-${idx}`} 
+                          className="px-2 py-1 bg-white border border-blue-200 rounded-md text-sm text-blue-800"
+                        >
+                          {option}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                <div className="space-y-4">
+                  {getFlowchartQuestions().map((question, index) => {
+                    // Extract the section ID from the flowchart ID
+                    const sectionIdMatch = question.id.match(/flowchart-(.+)/);
+                    const sectionId = sectionIdMatch ? sectionIdMatch[1] : `section-${index}`;
+                    
+                    return (
+                      <div key={question.id} className="flex items-start gap-3 p-3 bg-white rounded-lg border border-blue-100">
+                        <div className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center ${question.mark > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                          {question.mark > 0 ? (
+                            <CheckCircle size={14} />
+                          ) : (
+                            <X size={14} />
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex justify-between">
+                            <h5 className="text-sm font-medium text-gray-800">{question.question_text}</h5>
+                          </div>
+                          <div className="mt-2 text-sm">
+                            <div className="flex gap-2">
+                              <span className="font-medium text-gray-700">Your answer:</span>
+                              <span className={question.mark > 0 ? 'text-green-600 font-medium' : 'text-red-600'}>
+                                {answers[sectionId] || <em className="text-gray-400">No answer</em>}
+                              </span>
+                            </div>
+                            {question.ideal_answer && (
+                              <div className="flex gap-2 mt-1">
+                                <span className="font-medium text-gray-700">Correct answer:</span>
+                                <span className="text-green-600">{question.ideal_answer}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
           
           {feedback && (
             <div className="prose prose-sm max-w-none text-gray-700 markdown-content mt-6">

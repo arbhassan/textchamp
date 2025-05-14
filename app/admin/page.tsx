@@ -71,7 +71,7 @@ export default function AdminPanel() {
     story_text: string;
     description: string;
     time_limit: number;
-    exercise_type: "questions" | "flowchart";
+    exercise_type: "questions" | "flowchart" | "combined";
   }>({
     title: "",
     story_text: "",
@@ -711,17 +711,8 @@ export default function AdminPanel() {
       exercise_type: exercise.exercise_type || "questions" // Default to questions type if not specified
     });
     
-    if (exercise.exercise_type === "flowchart" && exercise.flowchart) {
-      // Format flowchart for form
-      setFormFlowchart({
-        options: exercise.flowchart.options,
-        sections: exercise.flowchart.sections.map(s => ({
-          ...s,
-          isNew: false
-        }))
-      });
-    } else {
-      // Format questions for form
+    // Format questions for form (for questions or combined type)
+    if (exercise.exercise_type === "questions" || exercise.exercise_type === "combined") {
       const questionsForForm = (exercise.questions || []).map(q => ({
         id: q.id,
         question_text: q.question_text,
@@ -732,6 +723,41 @@ export default function AdminPanel() {
       }));
       
       setFormNarrativeQuestions(questionsForForm);
+    } else {
+      // Reset questions if not needed
+      setFormNarrativeQuestions([]);
+    }
+    
+    // Format flowchart for form (for flowchart or combined type)
+    if (exercise.exercise_type === "flowchart" || exercise.exercise_type === "combined") {
+      if (exercise.flowchart) {
+        setFormFlowchart({
+          options: exercise.flowchart.options,
+          sections: exercise.flowchart.sections.map(s => ({
+            ...s,
+            isNew: false
+          }))
+        });
+      } else {
+        // Initialize with default flowchart if none exists
+        setFormFlowchart({
+          options: ["Option 1", "Option 2", "Option 3", "Option 4"],
+          sections: [
+            {
+              id: Date.now(),
+              name: "Paragraphs 1-2",
+              paragraphs: "1-2",
+              isNew: true
+            }
+          ]
+        });
+      }
+    } else {
+      // Reset flowchart if not needed
+      setFormFlowchart({
+        options: [],
+        sections: []
+      });
     }
     
     setSelectedNarrativeExercise(exercise);
@@ -814,14 +840,20 @@ export default function AdminPanel() {
           setMessage({ text: "At least one question is required", type: "error" });
           return;
         }
-      } else if (formNarrativeExercise.exercise_type === "flowchart") {
+      } else if (formNarrativeExercise.exercise_type === "combined") {
+        // For combined exercises, validate both questions and flowchart
+        if (formNarrativeQuestions.length === 0) {
+          setMessage({ text: "At least one question is required for combined exercises", type: "error" });
+          return;
+        }
+        
         if (formFlowchart.sections.length === 0) {
-          setMessage({ text: "At least one flowchart section is required", type: "error" });
+          setMessage({ text: "At least one flowchart section is required for combined exercises", type: "error" });
           return;
         }
         
         if (formFlowchart.options.length === 0) {
-          setMessage({ text: "At least one option is required", type: "error" });
+          setMessage({ text: "At least one option is required for combined exercises", type: "error" });
           return;
         }
       }
@@ -847,8 +879,19 @@ export default function AdminPanel() {
         
         exerciseData.questions = questionsToSave;
         
-      } else if (formNarrativeExercise.exercise_type === "flowchart") {
-        // Prepare flowchart data
+      } else if (formNarrativeExercise.exercise_type === "combined") {
+        // For combined exercises, save both questions and flowchart
+        
+        // Prepare questions
+        const questionsToSave = formNarrativeQuestions.map(q => ({
+          id: q.isNew ? undefined : q.id,
+          question_text: q.question_text,
+          ideal_answer: q.ideal_answer,
+          question_order: q.question_order,
+          marks: q.marks || 1
+        }));
+        
+        // Prepare flowchart
         const flowchartToSave = {
           options: formFlowchart.options,
           sections: formFlowchart.sections.map(s => ({
@@ -859,6 +902,8 @@ export default function AdminPanel() {
           }))
         };
         
+        // Add both to exercise data
+        exerciseData.questions = questionsToSave;
         exerciseData.flowchart = flowchartToSave;
       }
       
@@ -1220,11 +1265,11 @@ export default function AdminPanel() {
     }
   }
 
-  // Toggle exercise type between questions and flowchart
+  // Toggle exercise type between questions and combined
   const toggleExerciseType = () => {
     setFormNarrativeExercise(prev => ({
       ...prev,
-      exercise_type: prev.exercise_type === "questions" ? "flowchart" : "questions"
+      exercise_type: prev.exercise_type === "questions" ? "combined" : "questions"
     }));
   };
 
@@ -1748,207 +1793,276 @@ export default function AdminPanel() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setFormNarrativeExercise(prev => ({ ...prev, exercise_type: "flowchart" }))}
+                      onClick={() => setFormNarrativeExercise(prev => ({ ...prev, exercise_type: "combined" }))}
                       className={`px-4 py-2 rounded-md ${
-                        formNarrativeExercise.exercise_type === "flowchart"
+                        formNarrativeExercise.exercise_type === "combined"
                           ? "bg-blue-100 text-blue-700 border border-blue-300"
                           : "bg-gray-100 text-gray-700 border border-gray-300"
                       }`}
                     >
-                      Flow Chart
+                      Combined (Questions + Flowchart)
                     </button>
                   </div>
                 </div>
                 
-                {/* Replace the questions section with a conditional rendering based on exercise_type */}
-                {formNarrativeExercise.exercise_type === "questions" ? (
-                  <div className="mt-8">
+                {/* Show questions or flowchart based on exercise type */}
+                {formNarrativeExercise.exercise_type === "questions" && (
+                  <div className="mt-6">
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-lg font-medium text-gray-900">Questions</h3>
                       <button
                         type="button"
                         onClick={handleAddNarrativeQuestion}
-                        className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
                       >
-                        <Plus size={16} className="mr-2" />
-                        Add Question
+                        <Plus size={16} className="mr-1" /> Add Question
                       </button>
                     </div>
                     
-                    {formNarrativeQuestions.length === 0 ? (
-                      <p className="text-gray-500 text-center py-4">No questions yet. Add some questions.</p>
-                    ) : (
-                      <div className="space-y-6">
-                        {formNarrativeQuestions.map((question, index) => (
-                          <div key={question.id} className="bg-gray-50 p-4 rounded-md border border-gray-200 relative">
+                    {formNarrativeQuestions.map((question, index) => (
+                      <div key={question.id} className="mb-6 p-4 border border-gray-200 rounded-md bg-gray-50">
+                        <div className="flex justify-between items-center mb-3">
+                          <h4 className="text-md font-medium text-gray-700">Question {index + 1}</h4>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveNarrativeQuestion(index)}
+                            className="text-red-500 hover:text-red-700"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                        
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700">Question Text</label>
+                            <textarea
+                              name="question_text"
+                              rows={2}
+                              value={question.question_text}
+                              onChange={(e) => handleNarrativeQuestionChange(index, e)}
+                              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                            />
+                          </div>
+                          
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700">Ideal Answer</label>
+                            <textarea
+                              name="ideal_answer"
+                              rows={3}
+                              value={question.ideal_answer}
+                              onChange={(e) => handleNarrativeQuestionChange(index, e)}
+                              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                            />
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700">Question Order</label>
+                              <input
+                                type="number"
+                                name="question_order"
+                                value={question.question_order}
+                                onChange={(e) => handleNarrativeQuestionChange(index, e)}
+                                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                              />
+                            </div>
+                            
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700">Marks</label>
+                              <input
+                                type="number"
+                                name="marks"
+                                value={question.marks || 1}
+                                onChange={(e) => handleNarrativeQuestionChange(index, e)}
+                                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                {formNarrativeExercise.exercise_type === "combined" && (
+                  <div className="mt-6">
+                    {/* Questions Section */}
+                    <div className="mb-8">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-medium text-gray-900">Part 1: Questions</h3>
+                        <button
+                          type="button"
+                          onClick={handleAddNarrativeQuestion}
+                          className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
+                        >
+                          <Plus size={16} className="mr-1" /> Add Question
+                        </button>
+                      </div>
+                      
+                      {formNarrativeQuestions.map((question, index) => (
+                        <div key={question.id} className="mb-6 p-4 border border-gray-200 rounded-md bg-gray-50">
+                          <div className="flex justify-between items-center mb-3">
+                            <h4 className="text-md font-medium text-gray-700">Question {index + 1}</h4>
                             <button
                               type="button"
                               onClick={() => handleRemoveNarrativeQuestion(index)}
-                              className="absolute top-2 right-2 text-red-600 hover:text-red-800"
+                              className="text-red-500 hover:text-red-700"
                             >
-                              <Trash2 size={18} />
+                              <Trash2 size={16} />
                             </button>
+                          </div>
+                          
+                          <div className="space-y-4">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700">Question Text</label>
+                              <textarea
+                                name="question_text"
+                                rows={2}
+                                value={question.question_text}
+                                onChange={(e) => handleNarrativeQuestionChange(index, e)}
+                                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                              />
+                            </div>
                             
-                            <div className="flex space-x-4 mb-4">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700">Ideal Answer</label>
+                              <textarea
+                                name="ideal_answer"
+                                rows={3}
+                                value={question.ideal_answer}
+                                onChange={(e) => handleNarrativeQuestionChange(index, e)}
+                                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                              />
+                            </div>
+                            
+                            <div className="grid grid-cols-2 gap-4">
                               <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Order</label>
+                                <label className="block text-sm font-medium text-gray-700">Question Order</label>
                                 <input
                                   type="number"
                                   name="question_order"
                                   value={question.question_order}
                                   onChange={(e) => handleNarrativeQuestionChange(index, e)}
-                                  className="w-16 border border-gray-300 rounded-md shadow-sm py-1 px-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
                                 />
                               </div>
                               
                               <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Marks</label>
+                                <label className="block text-sm font-medium text-gray-700">Marks</label>
                                 <input
                                   type="number"
                                   name="marks"
-                                  value={question.marks}
+                                  value={question.marks || 1}
                                   onChange={(e) => handleNarrativeQuestionChange(index, e)}
-                                  className="w-16 border border-gray-300 rounded-md shadow-sm py-1 px-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
                                 />
                               </div>
                             </div>
-                            
-                            <div className="mb-3">
-                              <label className="block text-sm font-medium text-gray-700 mb-1">Question Text</label>
-                              <textarea
-                                name="question_text"
-                                value={question.question_text}
-                                onChange={(e) => handleNarrativeQuestionChange(index, e)}
-                                rows={2}
-                                className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                                placeholder="Question text"
-                              />
-                            </div>
-                            
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">Ideal Answer</label>
-                              <textarea
-                                name="ideal_answer"
-                                value={question.ideal_answer}
-                                onChange={(e) => handleNarrativeQuestionChange(index, e)}
-                                rows={3}
-                                className="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                                placeholder="Ideal answer for this question"
-                              />
-                            </div>
                           </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="mt-8">
-                    {/* Flowchart Options */}
-                    <div>
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-medium text-gray-900">Word Options</h3>
-                        <button
-                          type="button"
-                          onClick={handleAddFlowchartOption}
-                          className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                        >
-                          <Plus size={16} className="mr-2" />
-                          Add Option
-                        </button>
-                      </div>
-                      
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-6">
-                        {formFlowchart.options.map((option, index) => (
-                          <div key={index} className="relative">
-                            <input
-                              type="text"
-                              value={option}
-                              onChange={(e) => handleFlowchartOptionChange(index, e.target.value)}
-                              className="w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 pr-8 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveFlowchartOption(index)}
-                              className="absolute right-2 top-1/2 transform -translate-y-1/2 text-red-500 hover:text-red-700"
-                            >
-                              <X size={16} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
+                        </div>
+                      ))}
                     </div>
                     
-                    {/* Flowchart Sections */}
-                    <div className="mt-6">
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-medium text-gray-900">Flow Chart Sections</h3>
-                        <button
-                          type="button"
-                          onClick={handleAddFlowchartSection}
-                          className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                        >
-                          <Plus size={16} className="mr-2" />
-                          Add Section
-                        </button>
-                      </div>
-                      
-                      {formFlowchart.sections.length === 0 ? (
-                        <p className="text-gray-500 text-center py-4">No sections yet. Add some sections to your flow chart.</p>
-                      ) : (
-                        <div className="space-y-6">
-                          {formFlowchart.sections.map((section, index) => (
-                            <div key={section.id} className="bg-gray-50 p-4 rounded-md border border-gray-200 relative">
+                    {/* Flowchart Section */}
+                    <div className="border-t border-gray-200 pt-8">
+                      <div>
+                        <h3 className="text-lg font-medium text-gray-900 mb-4">Part 2: Flowchart Options</h3>
+                        <p className="text-sm text-gray-500 mb-4">
+                          Add words that students will choose from to complete the flowchart.
+                        </p>
+                        
+                        <div className="flex flex-wrap gap-2 mb-4">
+                          {formFlowchart.options.map((option, index) => (
+                            <div key={index} className="flex items-center bg-gray-100 rounded-md overflow-hidden">
+                              <input
+                                type="text"
+                                value={option}
+                                onChange={(e) => handleFlowchartOptionChange(index, e.target.value)}
+                                className="py-1 px-2 bg-transparent border-none focus:ring-0 text-gray-800"
+                              />
                               <button
                                 type="button"
-                                onClick={() => handleRemoveFlowchartSection(index)}
-                                className="absolute top-2 right-2 text-red-600 hover:text-red-800"
+                                onClick={() => handleRemoveFlowchartOption(index)}
+                                className="p-1 text-red-500 hover:text-red-700"
                               >
-                                <Trash2 size={18} />
+                                <X size={14} />
                               </button>
-                              
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-1">Section Name</label>
-                                  <input
-                                    type="text"
-                                    value={section.name}
-                                    onChange={(e) => handleFlowchartSectionChange(index, "name", e.target.value)}
-                                    className="w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                                    placeholder="e.g., Paragraphs 1-2"
-                                  />
-                                </div>
-                                
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-1">Paragraph Reference</label>
-                                  <input
-                                    type="text"
-                                    value={section.paragraphs}
-                                    onChange={(e) => handleFlowchartSectionChange(index, "paragraphs", e.target.value)}
-                                    className="w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                                    placeholder="e.g., 1-2 or 3"
-                                  />
-                                </div>
-                              </div>
-                              
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Correct Answer</label>
-                                <select
-                                  value={section.correct_answer || ""}
-                                  onChange={(e) => handleFlowchartSectionChange(index, "correct_answer", e.target.value)}
-                                  className="w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                                >
-                                  <option value="">-- Select correct answer --</option>
-                                  {formFlowchart.options.map((option, optIdx) => (
-                                    <option key={optIdx} value={option}>
-                                      {option}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
                             </div>
                           ))}
                         </div>
-                      )}
+                        
+                        <button
+                          type="button"
+                          onClick={handleAddFlowchartOption}
+                          className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 mb-6"
+                        >
+                          <Plus size={16} className="mr-1" /> Add Option
+                        </button>
+                      </div>
+                      
+                      <div>
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-lg font-medium text-gray-900">Flowchart Sections</h3>
+                          <button
+                            type="button"
+                            onClick={handleAddFlowchartSection}
+                            className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
+                          >
+                            <Plus size={16} className="mr-1" /> Add Section
+                          </button>
+                        </div>
+                        
+                        {formFlowchart.sections.map((section, index) => (
+                          <div key={section.id} className="mb-6 p-4 border border-gray-200 rounded-md bg-gray-50">
+                            <div className="flex justify-between items-center mb-3">
+                              <h4 className="text-md font-medium text-gray-700">Section {index + 1}</h4>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveFlowchartSection(index)}
+                                className="text-red-500 hover:text-red-700"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                            
+                            <div className="space-y-4">
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700">Section Name</label>
+                                <input
+                                  type="text"
+                                  value={section.name}
+                                  onChange={(e) => handleFlowchartSectionChange(index, 'name', e.target.value)}
+                                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                                />
+                              </div>
+                              
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700">Paragraphs</label>
+                                <input
+                                  type="text"
+                                  value={section.paragraphs}
+                                  onChange={(e) => handleFlowchartSectionChange(index, 'paragraphs', e.target.value)}
+                                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                                  placeholder="e.g., '1-2' or '5'"
+                                />
+                                <p className="mt-1 text-xs text-gray-500">
+                                  Enter paragraph numbers or ranges (e.g., "1-2" or "5")
+                                </p>
+                              </div>
+                              
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700">Correct Answer (Optional)</label>
+                                <input
+                                  type="text"
+                                  value={section.correct_answer || ''}
+                                  onChange={(e) => handleFlowchartSectionChange(index, 'correct_answer', e.target.value)}
+                                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 )}
