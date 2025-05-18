@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { supabase } from "../../lib/supabase"
 import { VisualExercise, Question, NarrativeExercise, NarrativeQuestion } from "../../lib/types"
-import { Trash2, Plus, Save, Edit, ChevronDown, ChevronUp, Upload, X, Eye, ArrowLeft, BookOpen, Image, FileText, Lock } from "lucide-react"
+import { Trash2, Plus, Save, Edit, ChevronDown, ChevronUp, Upload, X, Eye, ArrowLeft, BookOpen, Image, FileText, Lock, Users } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 
@@ -1367,15 +1367,21 @@ export default function AdminPanel() {
             </Link>
             <h1 className="text-xl font-semibold text-gray-800">Exercise Management</h1>
           </div>
-          <button 
-            onClick={() => {
-              sessionStorage.removeItem('adminAuthenticated')
-              setIsAuthenticated(false)
-            }}
-            className="text-sm text-gray-600 hover:text-gray-800"
-          >
-            Logout
-          </button>
+          <div className="flex items-center space-x-4">
+            <Link href="/admin/users" className="flex items-center text-gray-600 hover:text-gray-800">
+              <Users size={20} className="mr-1" />
+              <span>Manage Users</span>
+            </Link>
+            <button 
+              onClick={() => {
+                sessionStorage.removeItem('adminAuthenticated')
+                setIsAuthenticated(false)
+              }}
+              className="text-sm text-gray-600 hover:text-gray-800"
+            >
+              Logout
+            </button>
+          </div>
         </div>
       </header>
       
