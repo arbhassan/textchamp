@@ -1,7 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import { ThemeProvider } from '@/components/theme-provider'
-import AdminLink from './components/AdminLink'
 import { AuthProvider } from '@/contexts/AuthContext'
 
 export const metadata: Metadata = {
@@ -30,10 +29,9 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <AuthProvider>
-            {children}
-            <AdminLink />
-          </AuthProvider>
+                  <AuthProvider>
+          {children}
+        </AuthProvider>
         </ThemeProvider>
       </body>
     </html>
