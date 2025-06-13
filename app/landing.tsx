@@ -3,16 +3,37 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useTheme } from "next-themes"
-import { Moon, Sun, X } from "lucide-react"
+import { Moon, Sun, X, AlertCircle } from "lucide-react"
+import { useAuth } from "@/contexts/AuthContext"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import Link from "next/link"
 
 export default function LandingPage() {
   const router = useRouter()
   const { theme, setTheme } = useTheme()
+  const { signUp } = useAuth()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [remember, setRemember] = useState(false)
   const [showMobileModal, setShowMobileModal] = useState(false)
+  const [showDesktopModal, setShowDesktopModal] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
+
+  // Signup form states
+  const [firstName, setFirstName] = useState("")
+  const [lastName, setLastName] = useState("")
+  const [phone, setPhone] = useState("")
+  const [currentLevel, setCurrentLevel] = useState("")
+  const [schoolName, setSchoolName] = useState("")
+  const [currentGrade, setCurrentGrade] = useState("")
+  const [userType, setUserType] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -20,6 +41,44 @@ export default function LandingPage() {
     console.log("Form submitted:", { email, password, remember })
     // For now, redirect to signup
     router.push('/signup')
+  }
+
+  // Handle signup form submission in modal
+  const handleSignupSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsLoading(true)
+    setError(null)
+
+    if (!firstName || !lastName || !email || !password || !phone || !currentLevel || !schoolName || !currentGrade || !userType) {
+      setError("Please fill in all the required fields.")
+      setIsLoading(false)
+      return
+    }
+
+    const userData = {
+      firstName,
+      lastName,
+      phone,
+      currentLevel,
+      schoolName,
+      currentGrade,
+      userType
+    }
+
+    try {
+      const { error, data } = await signUp(email, password, userData)
+      
+      if (error) {
+        setError(error.message)
+      } else {
+        setShowDesktopModal(false)
+        router.push("/signin?registered=true")
+      }
+    } catch (err: any) {
+      setError(err.message || "An error occurred during sign up.")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const toggleTheme = () => {
@@ -53,17 +112,8 @@ export default function LandingPage() {
     if (isMobile) {
       setShowMobileModal(true)
     } else {
-      // Desktop: Open in centered popup window
-      const width = 500
-      const height = 1000
-      const left = (screen.width - width) / 2
-      const top = (screen.height - height) / 2
-      
-      window.open(
-        '/signup',
-        'signup',
-        `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
-      )
+      // Desktop: Show modal instead of popup window
+      setShowDesktopModal(true)
     }
   }
 
@@ -607,6 +657,178 @@ export default function LandingPage() {
             </div>
           </div>
         )}
+
+        {/* Desktop Modal */}
+        {showDesktopModal && (
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+            onClick={() => setShowDesktopModal(false)}
+          >
+            <div 
+              className="bg-white rounded-2xl max-w-lg w-full mx-4 relative max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Close Button */}
+              <button 
+                onClick={() => setShowDesktopModal(false)}
+                className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 z-10"
+              >
+                <X size={24} />
+              </button>
+              
+              {/* Modal Content - Styled like the signup page */}
+              <div className="p-8">
+                <div className="text-center mb-6">
+                  <h2 className="text-2xl font-bold text-gray-900 mb-2">Create an Account</h2>
+                  <p className="text-gray-600">
+                    Enter your details to sign up for Text Champ
+                  </p>
+                </div>
+
+                {error && (
+                  <Alert className="mb-6 border-red-200 bg-red-50">
+                    <AlertCircle className="h-4 w-4 text-red-600" />
+                    <AlertDescription className="text-red-600">{error}</AlertDescription>
+                  </Alert>
+                )}
+                
+                                 <form onSubmit={handleSignupSubmit} className="space-y-4">
+                   <div className="grid grid-cols-2 gap-4">
+                     <div className="space-y-2">
+                       <Label htmlFor="firstName" className="text-gray-700 font-medium">First Name</Label>
+                       <Input
+                         id="firstName"
+                         value={firstName}
+                         onChange={(e) => setFirstName(e.target.value)}
+                         placeholder="John"
+                         required
+                       />
+                     </div>
+                     <div className="space-y-2">
+                       <Label htmlFor="lastName" className="text-gray-700 font-medium">Last Name</Label>
+                       <Input
+                         id="lastName"
+                         value={lastName}
+                         onChange={(e) => setLastName(e.target.value)}
+                         placeholder="Doe"
+                         required
+                       />
+                     </div>
+                   </div>
+                   
+                   <div className="space-y-2">
+                     <Label htmlFor="email" className="text-gray-700 font-medium">Email</Label>
+                     <Input
+                       id="email"
+                       type="email"
+                       value={email}
+                       onChange={(e) => setEmail(e.target.value)}
+                       placeholder="john.doe@example.com"
+                       required
+                     />
+                   </div>
+                   
+                   <div className="space-y-2">
+                     <Label htmlFor="password" className="text-gray-700 font-medium">Password</Label>
+                     <Input
+                       id="password"
+                       type="password"
+                       value={password}
+                       onChange={(e) => setPassword(e.target.value)}
+                       placeholder="••••••••"
+                       required
+                     />
+                   </div>
+                   
+                   <div className="space-y-2">
+                     <Label htmlFor="phone" className="text-gray-700 font-medium">Phone Number</Label>
+                     <Input
+                       id="phone"
+                       value={phone}
+                       onChange={(e) => setPhone(e.target.value)}
+                       placeholder="+1234567890"
+                       required
+                     />
+                   </div>
+                   
+                   <div className="space-y-2">
+                     <Label htmlFor="currentLevel" className="text-gray-700 font-medium">Current Level</Label>
+                     <Select value={currentLevel} onValueChange={setCurrentLevel} required>
+                       <SelectTrigger id="currentLevel" className="text-gray-900">
+                         <SelectValue placeholder="Select your current level" className="text-gray-500" />
+                       </SelectTrigger>
+                       <SelectContent>
+                         <SelectItem value="Secondary 1">Secondary 1</SelectItem>
+                         <SelectItem value="Secondary 2">Secondary 2</SelectItem>
+                         <SelectItem value="Secondary 3">Secondary 3</SelectItem>
+                         <SelectItem value="Secondary 4">Secondary 4</SelectItem>
+                         <SelectItem value="Secondary 5">Secondary 5</SelectItem>
+                         <SelectItem value="JC1">JC1</SelectItem>
+                         <SelectItem value="JC2">JC2</SelectItem>
+                       </SelectContent>
+                     </Select>
+                   </div>
+                   
+                   <div className="space-y-2">
+                     <Label htmlFor="schoolName" className="text-gray-700 font-medium">School Name</Label>
+                     <Input
+                       id="schoolName"
+                       value={schoolName}
+                       onChange={(e) => setSchoolName(e.target.value)}
+                       placeholder="Enter your school name"
+                       required
+                     />
+                   </div>
+                   
+                   <div className="space-y-2">
+                     <Label htmlFor="currentGrade" className="text-gray-700 font-medium">Current Grade</Label>
+                     <Input
+                       id="currentGrade"
+                       value={currentGrade}
+                       onChange={(e) => setCurrentGrade(e.target.value)}
+                       placeholder="A, B, C, etc."
+                       required
+                     />
+                   </div>
+                   
+                   <div className="space-y-2">
+                     <Label htmlFor="userType" className="text-gray-700 font-medium">I am a</Label>
+                     <Select value={userType} onValueChange={setUserType} required>
+                       <SelectTrigger id="userType" className="text-gray-900">
+                         <SelectValue placeholder="Select user type" className="text-gray-500" />
+                       </SelectTrigger>
+                       <SelectContent>
+                         <SelectItem value="Student">Student</SelectItem>
+                         <SelectItem value="Parent">Parent</SelectItem>
+                       </SelectContent>
+                     </Select>
+                   </div>
+                  
+                  <Button type="submit" className="w-full" disabled={isLoading}>
+                    {isLoading ? "Creating account..." : "Sign Up"}
+                  </Button>
+                </form>
+
+                <div className="mt-6 text-center">
+                  <p className="text-sm text-gray-600">
+                    Already have an account?{" "}
+                    <button 
+                      onClick={() => {
+                        setShowDesktopModal(false)
+                        router.push('/signin')
+                      }}
+                      className="text-indigo-600 font-medium hover:underline"
+                    >
+                      Sign in
+                    </button>
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        
       </div>
     )
   } 
