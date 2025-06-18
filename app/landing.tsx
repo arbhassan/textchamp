@@ -1,834 +1,335 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
-import { useTheme } from "next-themes"
-import { Moon, Sun, X, AlertCircle } from "lucide-react"
-import { useAuth } from "@/contexts/AuthContext"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { useEffect, useState } from "react"
 import Link from "next/link"
+import Image from "next/image"
+import { useRouter } from "next/navigation"
+import { supabase } from "../lib/supabase"
 
 export default function LandingPage() {
+  const [showStickyCTA, setShowStickyCTA] = useState(false)
   const router = useRouter()
-  const { theme, setTheme } = useTheme()
-  const { signUp } = useAuth()
+
+  // Landing page form states
+  const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
-  const [remember, setRemember] = useState(false)
-  const [showMobileModal, setShowMobileModal] = useState(false)
-  const [showDesktopModal, setShowDesktopModal] = useState(false)
-  const [isMobile, setIsMobile] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
 
-  // Signup form states
-  const [firstName, setFirstName] = useState("")
-  const [lastName, setLastName] = useState("")
-  const [phone, setPhone] = useState("")
-  const [currentLevel, setCurrentLevel] = useState("")
-  const [schoolName, setSchoolName] = useState("")
-  const [currentGrade, setCurrentGrade] = useState("")
-  const [userType, setUserType] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  // Sticky form states
+  const [stickyEmail, setStickyEmail] = useState("")
+  const [stickyPassword, setStickyPassword] = useState("")
+  const [stickyLoading, setStickyLoading] = useState(false)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Intersection Observer for sticky CTA
+  useEffect(() => {
+    const hero = document.getElementById('hero')
+    if (!hero) return
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setShowStickyCTA(!entry.isIntersecting)
+      },
+      { rootMargin: "-50% 0px 0px 0px" }
+    )
+
+    observer.observe(hero)
+    return () => observer.disconnect()
+  }, [])
+
+  // Fade in animation
+  useEffect(() => {
+    const observerOptions = {
+      threshold: 0.1,
+      rootMargin: '0px 0px -50px 0px'
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible')
+        }
+      })
+    }, observerOptions)
+
+    document.querySelectorAll('.fade-in').forEach(el => {
+      observer.observe(el)
+    })
+
+    return () => observer.disconnect()
+  }, [])
+
+  const handleSignUp = async (e) => {
     e.preventDefault()
-    // Handle form submission here
-    console.log("Form submitted:", { email, password, remember })
-    // For now, redirect to signup
-    router.push('/signup')
-  }
-
-  // Handle signup form submission in modal
-  const handleSignupSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsLoading(true)
+    setLoading(true)
     setError(null)
 
-    if (!firstName || !lastName || !email || !password || !phone || !currentLevel || !schoolName || !currentGrade || !userType) {
-      setError("Please fill in all the required fields.")
-      setIsLoading(false)
+    // Validate all required fields
+    if (!name || !email || !password) {
+      setError("Please fill in all fields.")
+      setLoading(false)
       return
     }
 
-    const userData = {
-      firstName,
-      lastName,
-      phone,
-      currentLevel,
-      schoolName,
-      currentGrade,
-      userType
+    try {
+      // Split name into first and last name
+      const nameParts = name.trim().split(' ')
+      const firstName = nameParts[0] || ''
+      const lastName = nameParts.slice(1).join(' ') || ''
+
+      const userData = {
+        first_name: firstName,
+        last_name: lastName,
+        user_type: 'Student' // Default to student
+      }
+
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: userData,
+          emailRedirectTo: `${window.location.origin}/auth/callback`
+        },
+      })
+
+      if (error) {
+        throw error
+      }
+
+      // If signup successful, redirect directly to the app
+      router.push("/")
+    } catch (error) {
+      setError(error.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleStickySignUp = async (e) => {
+    e.preventDefault()
+    setStickyLoading(true)
+    setError(null)
+
+    // Validate required fields
+    if (!stickyEmail || !stickyPassword) {
+      setError("Please fill in email and password.")
+      setStickyLoading(false)
+      return
     }
 
     try {
-      const { error, data } = await signUp(email, password, userData)
-      
-      if (error) {
-        setError(error.message)
-      } else {
-        setShowDesktopModal(false)
-        router.push("/signin?registered=true")
+      const userData = {
+        first_name: '',
+        last_name: '',
+        user_type: 'Student'
       }
-    } catch (err: any) {
-      setError(err.message || "An error occurred during sign up.")
+
+      const { data, error } = await supabase.auth.signUp({
+        email: stickyEmail,
+        password: stickyPassword,
+        options: {
+          data: userData,
+          emailRedirectTo: `${window.location.origin}/auth/callback`
+        },
+      })
+
+      if (error) {
+        throw error
+      }
+
+      router.push("/")
+    } catch (error) {
+      setError(error.message)
     } finally {
-      setIsLoading(false)
+      setStickyLoading(false)
     }
-  }
-
-  const toggleTheme = () => {
-    setTheme(theme === "dark" ? "light" : "dark")
-  }
-
-  // Detect mobile device
-  useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth <= 768)
-    }
-    
-    checkMobile()
-    window.addEventListener('resize', checkMobile)
-    
-    return () => window.removeEventListener('resize', checkMobile)
-  }, [])
-
-  // Auto-open modal/popup when page loads
-  useEffect(() => {
-    // Small delay to ensure the page is fully loaded and mobile detection is complete
-    const timer = setTimeout(() => {
-      handleStartPracticing()
-    }, 1000)
-
-    return () => clearTimeout(timer)
-  }, [isMobile])
-
-  // Handle Start Practicing Now button click
-  const handleStartPracticing = () => {
-    if (isMobile) {
-      setShowMobileModal(true)
-    } else {
-      // Desktop: Show modal instead of popup window
-      setShowDesktopModal(true)
-    }
-  }
-
-  // Handle mobile modal signup button
-  const handleMobileSignup = () => {
-    setShowMobileModal(false)
-    router.push('/signup')
   }
 
   return (
-    <div className="bg-gray-50 min-h-screen">
-                  {/* Hero Section */}
-      <section className="pt-1 pb-1 bg-white overflow-hidden">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="lg:grid lg:grid-cols-2 lg:gap-12 items-center">
-            <div className="mb-12 lg:mb-0">
-              {/* Logo */}
-              <div className="mb-8">
-                <img 
-                  src="/logo.png" 
-                  alt="TextChamp Logo" 
-                  className="h-40 w-auto"
-                />
-              </div>
-              
-              {/* Main Headline */}
-              <h1 className="text-5xl lg:text-6xl font-black text-gray-900 leading-tight mb-6">
-                From <span className="text-red-600">C6 to A1</span> in 90 Days
-                <span className="block text-4xl lg:text-5xl text-gray-700 mt-2">
-                  The Secret Singapore Secondary Students Use to <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600">ACE English Paper 2</span>
-                </span>
-              </h1>
-              
-              {/* Subheadline */}
-              <p className="text-xl lg:text-2xl text-gray-600 mb-8 leading-relaxed">
-                Join <strong>2,847+ students</strong> who've transformed their <strong>comprehension</strong>, <strong>summary writing</strong>, and <strong>visual text analysis</strong> skills using Singapore's most comprehensive O-Level Paper 2 mastery system.
-              </p>
-              
-              {/* CTA Buttons */}
-              <div className="flex flex-col sm:flex-row gap-4 mb-8">
-                <button 
-                  onClick={handleStartPracticing}
-                  className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 transform hover:-translate-y-0.5 transition-all duration-300 px-8 py-4 rounded-xl text-white font-bold text-lg shadow-xl"
-                >
-                  <span className="mr-2">🚀</span>
-                  Start Practicing Now - FREE
-                </button>
-              </div>
-              
-              {/* Social Proof */}
-              <div className="flex items-center text-sm text-gray-600">
-                <div className="flex -space-x-2 mr-4">
-                  <div className="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center text-white text-xs font-bold">S</div>
-                  <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white text-xs font-bold">M</div>
-                  <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center text-white text-xs font-bold">A</div>
-                  <div className="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center text-white text-xs font-bold">L</div>
-                  <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center text-white text-xs font-bold">+</div>
-                </div>
-                <span><strong>127 students</strong> signed up in the last 24 hours</span>
-              </div>
-            </div>
-            
-            {/* Hero Illustration */}
-            <div className="relative">
-              <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl p-8 transform hover:-translate-y-2 transition-transform duration-300 relative overflow-hidden">
-                {/* Mockup of TextChamp Interface */}
-                <div className="bg-white rounded-xl p-6 shadow-2xl relative z-10">
-                  <div className="flex items-center mb-4">
-                    <div className="w-3 h-3 bg-red-500 rounded-full mr-2"></div>
-                    <div className="w-3 h-3 bg-yellow-500 rounded-full mr-2"></div>
-                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                    <div className="ml-auto text-sm font-semibold text-gray-600">TextChamp Dashboard</div>
-                  </div>
-                  <div className="space-y-3">
-                    <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-                    <div className="h-4 bg-indigo-200 rounded w-1/2"></div>
-                    <div className="h-8 bg-green-100 rounded flex items-center px-3">
-                      <span className="text-green-600 mr-2">✅</span>
-                      <span className="text-sm font-semibold text-green-800">Summary Question Completed</span>
-                    </div>
-                    <div className="h-4 bg-gray-200 rounded w-2/3"></div>
-                  </div>
-                </div>
-                
-                {/* Floating Keywords */}
-                <div className="absolute -top-4 -left-4 bg-yellow-400 text-black px-4 py-2 rounded-full text-sm font-bold shadow-lg border-2 border-gray-800">
-                  Summary
-                </div>
-                <div className="absolute top-8 -right-6 bg-orange-500 text-white px-4 py-2 rounded-full text-sm font-bold shadow-lg border-2 border-gray-800">
-                  Visual Text
-                </div>
-                <div className="absolute -bottom-4 left-8 bg-green-500 text-white px-4 py-2 rounded-full text-sm font-bold shadow-lg border-2 border-gray-800">
-                  Vocabulary
-                </div>
-                <div className="absolute bottom-8 -right-4 bg-purple-500 text-white px-4 py-2 rounded-full text-sm font-bold shadow-lg border-2 border-gray-800">
-                  Feedback
-                </div>
-                <div className="absolute top-20 -left-8 bg-blue-500 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg border-2 border-gray-800">
-                  MOE-Aligned
-                </div>
-                <div className="absolute -top-8 right-4 bg-pink-500 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg border-2 border-gray-800">
-                  SEAB Format
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        {/* Scroll Indicator */}
-        <div className="text-center mt-16">
-          <div className="inline-block text-gray-400 animate-bounce">
-            <span className="text-2xl">⬇️</span>
-          </div>
-        </div>
-      </section>
+    <div className="bg-gray-50">
+      {/* Logo */}
+      <div className="absolute top-1 left-2 md:top-0 md:left-6 z-30">
+        <Image
+          src="/logo.png"
+          alt="TextChamp Logo"
+          width={150}
+          height={180}
+          className="w-32 h-32 md:w-[150px] md:h-[150px] drop-shadow-lg"
+        />
+      </div>
 
-      {/* Benefits Section */}
-      <section className="py-20 bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl lg:text-5xl font-black text-gray-900 mb-6">
-              The Complete <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600">O-Level English Paper 2 Arsenal</span>
-            </h2>
-            <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-              Master every section of Singapore's O-Level English Paper 2 with our comprehensive, <strong>MOE-aligned curriculum</strong> designed by top educators for <strong>Secondary 1-5 students</strong>.
-            </p>
-          </div>
-          
-          <div className="grid lg:grid-cols-3 gap-8 mb-16">
-            {/* Benefit 1 */}
-            <div className="bg-white p-8 rounded-2xl shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1">
-              <div className="w-16 h-16 bg-gradient-to-br from-yellow-400 to-yellow-600 text-white rounded-full flex items-center justify-center mb-6">
-                <span className="text-2xl">✍️</span>
-              </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-4">📝 Summary Writing Mastery</h3>
-              <p className="text-gray-600 text-lg leading-relaxed">
-                Proven <strong>7-step method</strong> used by A1 students. Learn to identify key points, eliminate redundancy, and craft concise summaries that score maximum marks in <strong>O-Level Paper 2</strong>.
-              </p>
-            </div>
-            
-            {/* Benefit 2 */}
-            <div className="bg-white p-8 rounded-2xl shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1">
-              <div className="w-16 h-16 bg-gradient-to-br from-yellow-400 to-yellow-600 text-white rounded-full flex items-center justify-center mb-6">
-                <span className="text-2xl">📊</span>
-              </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-4">📊 Visual Text Decoding</h3>
-              <p className="text-gray-600 text-lg leading-relaxed">
-                <strong>Website, posters, infographics</strong> made simple. Master the step-by-step visual text analysis methods that help you extract information accurately and answer questions precisely.
-              </p>
-            </div>
-            
-            {/* Benefit 3 */}
-            <div className="bg-white p-8 rounded-2xl shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1">
-              <div className="w-16 h-16 bg-gradient-to-br from-yellow-400 to-yellow-600 text-white rounded-full flex items-center justify-center mb-6">
-                <span className="text-2xl">🧠</span>
-              </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-4">🧠 Inference & Analysis Skills</h3>
-              <p className="text-gray-600 text-lg leading-relaxed">
-                Read between the lines like a pro. Master <strong>inference questions</strong> and <strong>language use analysis</strong> with proven techniques that boost your comprehension scores.
-              </p>
-            </div>
-            
-            {/* Benefit 4 */}
-            <div className="bg-white p-8 rounded-2xl shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1">
-              <div className="w-16 h-16 bg-gradient-to-br from-yellow-400 to-yellow-600 text-white rounded-full flex items-center justify-center mb-6">
-                <span className="text-2xl">📚</span>
-              </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-4">📚 Vocabulary Power-Up</h3>
-              <p className="text-gray-600 text-lg leading-relaxed">
-                <strong>500+ Paper 2 essential words</strong> with context. Learn synonyms, context clues, and word formation to boost your comprehension and summary writing skills.
-              </p>
-            </div>
-            
-            {/* Benefit 5 */}
-            <div className="bg-white p-8 rounded-2xl shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1">
-              <div className="w-16 h-16 bg-gradient-to-br from-yellow-400 to-yellow-600 text-white rounded-full flex items-center justify-center mb-6">
-                <span className="text-2xl">👨‍🎓</span>
-              </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-4">✅ Expert Feedback System</h3>
-              <p className="text-gray-600 text-lg leading-relaxed">
-                Get <strong>personalized feedback</strong> from <strong>experienced educators</strong>. Submit your answers and receive detailed insights on how to improve your comprehension skills.
-              </p>
-            </div>
-            
-            {/* Benefit 6 */}
-            <div className="bg-white p-8 rounded-2xl shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1">
-              <div className="w-16 h-16 bg-gradient-to-br from-yellow-400 to-yellow-600 text-white rounded-full flex items-center justify-center mb-6">
-                <span className="text-2xl">⏰</span>
-              </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-4">🎯 Exam Technique Training</h3>
-              <p className="text-gray-600 text-lg leading-relaxed">
-                Master <strong>time management</strong> and <strong>question prioritization</strong> strategies. Learn how to maximize your Paper 2 scores within the exam time limit.
-              </p>
-            </div>
-            
-            {/* Benefit 7 */}
-            <div className="bg-white p-8 rounded-2xl shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1">
-              <div className="w-16 h-16 bg-gradient-to-br from-yellow-400 to-yellow-600 text-white rounded-full flex items-center justify-center mb-6">
-                <span className="text-2xl">📈</span>
-              </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-4">📈 Progress Tracking</h3>
-              <p className="text-gray-600 text-lg leading-relaxed">
-                See your improvement in real-time with detailed analytics. Track your performance across <strong>summary writing</strong>, <strong>visual text</strong>, and <strong>comprehension questions</strong>.
-              </p>
-            </div>
-          </div>
-          
-          {/* Parent Value Proposition */}
-          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-3xl p-8 lg:p-12 text-white text-center">
-            <h3 className="text-3xl lg:text-4xl font-black mb-6">
-              No More $200/month Tuition Fees
-            </h3>
-            <p className="text-xl lg:text-2xl opacity-90 mb-8">
-              Give your child the structured support they need to ace <strong>O-Level English comprehension</strong> with <strong>MOE-aligned learning</strong> at home.
-            </p>
+      {/* Sticky CTA */}
+      {showStickyCTA && (
+        <div className="fixed top-0 left-0 w-full bg-white shadow-lg py-3 px-4 z-40 border-b">
+          <form onSubmit={handleStickySignUp} className="flex items-center gap-2 max-w-2xl mx-auto">
+            <span className="text-sm font-medium text-gray-700 hidden md:block">TextChamp:</span>
+            <input 
+              type="email" 
+              value={stickyEmail}
+              onChange={(e) => setStickyEmail(e.target.value)}
+              placeholder="Email"
+              className="flex-1 px-3 py-2 rounded-lg border border-gray-300 focus:border-blue-500 focus:outline-none text-sm" 
+              required 
+            />
+            <input 
+              type="password" 
+              value={stickyPassword}
+              onChange={(e) => setStickyPassword(e.target.value)}
+              placeholder="Password"
+              className="flex-1 px-3 py-2 rounded-lg border border-gray-300 focus:border-blue-500 focus:outline-none text-sm" 
+              required 
+            />
             <button 
-              onClick={() => router.push('/signup')}
-              className="bg-white text-indigo-600 px-8 py-4 rounded-xl font-bold text-lg hover:bg-gray-100 transition-all"
+              type="submit"
+              disabled={stickyLoading}
+              className="bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg hover:scale-105 transition-all duration-200 text-sm disabled:opacity-50"
             >
-              Start Free Trial for Your Child
+              {stickyLoading ? 'Signing up...' : 'Start Free Trial'}
             </button>
-          </div>
+          </form>
         </div>
-      </section>
+      )}
 
-      {/* Parent Benefits Section */}
-      <section className="py-20 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="lg:grid lg:grid-cols-2 lg:gap-16 items-center">
-            <div>
-              <h2 className="text-4xl lg:text-5xl font-black text-gray-900 mb-8">
-                Track Your Child's Progress Like a Pro—<span className="text-transparent bg-clip-text bg-gradient-to-r from-green-600 to-blue-600">See Results in Real-Time</span>
-              </h2>
-              
-              <div className="space-y-6">
-                <div className="flex items-start">
-                  <div className="flex-shrink-0 w-8 h-8 bg-green-500 rounded-full flex items-center justify-center mr-4 mt-1">
-                    <span className="text-white text-sm">📈</span>
-                  </div>
-                  <div>
-                    <h4 className="text-xl font-bold text-gray-900 mb-2">Real-time Progress Tracking with Comprehension Submissions</h4>
-                    <p className="text-gray-600 text-lg">Monitor your child's <strong>O-Level Paper 2</strong> practice with detailed analytics showing strengths and areas for improvement in <strong>summary writing</strong>, <strong>visual text analysis</strong>, and <strong>open-ended questions</strong>.</p>
-                  </div>
-                </div>
-                
-                <div className="flex items-start">
-                  <div className="flex-shrink-0 w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center mr-4 mt-1">
-                    <span className="text-white text-sm">🏆</span>
-                  </div>
-                  <div>
-                    <h4 className="text-xl font-bold text-gray-900 mb-2">Expert-reviewed Answers—Know Your Child is Learning from the Best</h4>
-                    <p className="text-gray-600 text-lg"><strong>Experienced educators</strong> review model answers and provide feedback, ensuring your child learns from Singapore's best English teachers—giving you complete peace of mind.</p>
-                  </div>
-                </div>
-                
-                <div className="flex items-start">
-                  <div className="flex-shrink-0 w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center mr-4 mt-1">
-                    <span className="text-white text-sm">🏠</span>
-                  </div>
-                  <div>
-                    <h4 className="text-xl font-bold text-gray-900 mb-2">No More Guesswork—Everything You Need in One App</h4>
-                    <p className="text-gray-600 text-lg">Your child can practice <strong>O-Level Paper 2 skills</strong> anytime, anywhere with <strong>SEAB-aligned content</strong>—perfect for busy family schedules and <strong>Express/Normal Academic</strong> streams.</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <div className="mt-12 lg:mt-0">
-              <div className="bg-gray-50 rounded-2xl p-8">
-                <div className="text-center mb-6">
-                  <div className="text-4xl font-black text-gray-900 mb-2">vs Traditional Tuition</div>
-                  <p className="text-gray-600">See why parents choose TextChamp</p>
-                </div>
-                
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center py-3 border-b border-gray-200">
-                    <span className="text-gray-700">Monthly Cost</span>
-                    <div className="text-right">
-                      <div className="text-green-600 font-bold">$0/month</div>
-                      <div className="text-gray-400 line-through text-sm">$200-400/month</div>
-                    </div>
-                  </div>
-                  
-                  <div className="flex justify-between items-center py-3 border-b border-gray-200">
-                    <span className="text-gray-700">Travel Time</span>
-                    <div className="text-right">
-                      <div className="text-green-600 font-bold">0 minutes</div>
-                      <div className="text-gray-400 text-sm">2-4 hours/week</div>
-                    </div>
-                  </div>
-                  
-                  <div className="flex justify-between items-center py-3 border-b border-gray-200">
-                    <span className="text-gray-700">Practice Questions</span>
-                    <div className="text-right">
-                      <div className="text-green-600 font-bold">Unlimited</div>
-                      <div className="text-gray-400 text-sm">Limited</div>
-                    </div>
-                  </div>
-                  
-                  <div className="flex justify-between items-center py-3">
-                    <span className="text-gray-700">Progress Tracking</span>
-                    <div className="text-right">
-                      <div className="text-green-600 font-bold">24/7 Access</div>
-                      <div className="text-gray-400 text-sm">Weekly Updates</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+      {/* Error Message */}
+      {error && (
+        <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 bg-red-50 border border-red-200 rounded-md p-3 flex items-start max-w-md">
+          <i className="fas fa-exclamation-circle text-red-500 mr-2 mt-0.5"></i>
+          <p className="text-red-700 text-sm">{error}</p>
         </div>
-      </section>
+      )}
 
-      {/* Testimonials Section */}
-      <section className="py-20 bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl lg:text-5xl font-black text-gray-900 mb-6">
-              What <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-500 to-orange-600">Students and Parents</span> Are Saying
-            </h2>
-            <p className="text-xl text-gray-600">Real results from real Singapore students preparing for <strong>O-Level English Paper 2</strong></p>
-          </div>
-          
-          <div className="grid lg:grid-cols-3 gap-8">
-            {/* Testimonial 1 */}
-            <div className="bg-white p-8 rounded-2xl shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1">
-              <div className="flex items-center mb-4">
-                <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center mr-4">
-                  <span className="text-indigo-600 font-bold text-lg">Z</span>
-                </div>
-                <div>
-                  <div className="font-bold text-gray-900">Zachary Lim</div>
-                  <div className="text-gray-600 text-sm">Sec 4 Student, Raffles Institution</div>
-                </div>
-              </div>
-              <div className="flex mb-4">
-                {[1,2,3,4,5].map((star) => (
-                  <span key={star} className="text-yellow-400">⭐</span>
-                ))}
-              </div>
-              <p className="text-gray-700 italic text-lg leading-relaxed">
-                "TextChamp's model answers and vocabulary builder made Paper 2 so much easier! My grades jumped from C6 to B3 in just one term. The summary techniques are pure gold!"
-              </p>
-            </div>
-            
-            {/* Testimonial 2 */}
-            <div className="bg-white p-8 rounded-2xl shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1">
-              <div className="flex items-center mb-4">
-                <div className="w-12 h-12 bg-pink-100 rounded-full flex items-center justify-center mr-4">
-                  <span className="text-pink-600 font-bold text-lg">K</span>
-                </div>
-                <div>
-                  <div className="font-bold text-gray-900">Mrs. Koh Wei Lin</div>
-                  <div className="text-gray-600 text-sm">Parent of Sec 3 Student</div>
-                </div>
-              </div>
-              <div className="flex mb-4">
-                {[1,2,3,4,5].map((star) => (
-                  <span key={star} className="text-yellow-400">⭐</span>
-                ))}
-              </div>
-              <p className="text-gray-700 italic text-lg leading-relaxed">
-                "My daughter's confidence improved dramatically. She now understands summary and visual text questions completely. TextChamp saved us thousands in tuition fees!"
-              </p>
-            </div>
-            
-            {/* Testimonial 3 */}
-            <div className="bg-white p-8 rounded-2xl shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1">
-              <div className="flex items-center mb-4">
-                <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mr-4">
-                  <span className="text-green-600 font-bold text-lg">C</span>
-                </div>
-                <div>
-                  <div className="font-bold text-gray-900">Cheryl Tan</div>
-                  <div className="text-gray-600 text-sm">Sec 3 Student, CHIJ St. Nicholas</div>
-                </div>
-              </div>
-              <div className="flex mb-4">
-                {[1,2,3,4,5].map((star) => (
-                  <span key={star} className="text-yellow-400">⭐</span>
-                ))}
-              </div>
-              <p className="text-gray-700 italic text-lg leading-relaxed">
-                "The feedback system is incredible! I submit my answers and get detailed explanations on how to improve. My open-ended question scores went from 8/15 to 13/15!"
-              </p>
-            </div>
-            
-            {/* Additional testimonials in a grid that wraps */}
-            <div className="bg-white p-8 rounded-2xl shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1">
-              <div className="flex items-center mb-4">
-                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mr-4">
-                  <span className="text-blue-600 font-bold text-lg">L</span>
-                </div>
-                <div>
-                  <div className="font-bold text-gray-900">Mr. Lim Han Wei</div>
-                  <div className="text-gray-600 text-sm">Parent of Sec 4 Student</div>
-                </div>
-              </div>
-              <div className="flex mb-4">
-                {[1,2,3,4,5].map((star) => (
-                  <span key={star} className="text-yellow-400">⭐</span>
-                ))}
-              </div>
-              <p className="text-gray-700 italic text-lg leading-relaxed">
-                "TextChamp is like having an English tutor at home 24/7. My son's O-Level Paper 2 preparation is so much more structured now. His prelim marks improved by 2 grades!"
-              </p>
-            </div>
-            
-            <div className="bg-white p-8 rounded-2xl shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1">
-              <div className="flex items-center mb-4">
-                <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mr-4">
-                  <span className="text-purple-600 font-bold text-lg">A</span>
-                </div>
-                <div>
-                  <div className="font-bold text-gray-900">Arjun Krishnan</div>
-                  <div className="text-gray-600 text-sm">Sec 5 Student, Victoria School</div>
-                </div>
-              </div>
-              <div className="flex mb-4">
-                {[1,2,3,4,5].map((star) => (
-                  <span key={star} className="text-yellow-400">⭐</span>
-                ))}
-              </div>
-              <p className="text-gray-700 italic text-lg leading-relaxed">
-                "Finally understand how to tackle visual text questions! The step-by-step approach helped me score full marks in my last practice paper. Can't wait for O-Levels!"
-              </p>
-            </div>
-            
-            <div className="bg-white p-8 rounded-2xl shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-1">
-              <div className="flex items-center mb-4">
-                <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mr-4">
-                  <span className="text-yellow-600 font-bold text-lg">S</span>
-                </div>
-                <div>
-                  <div className="font-bold text-gray-900">Sarah Wong</div>
-                  <div className="text-gray-600 text-sm">Parent of Sec 2 Student</div>
-                </div>
-              </div>
-              <div className="flex mb-4">
-                {[1,2,3,4,5].map((star) => (
-                  <span key={star} className="text-yellow-400">⭐</span>
-                ))}
-              </div>
-              <p className="text-gray-700 italic text-lg leading-relaxed">
-                "My daughter started using TextChamp in Sec 2 and her comprehension skills are already so strong. The vocabulary builder is especially effective for building confidence."
-              </p>
-            </div>
-          </div>
+      {/* Hero Section */}
+      <section id="hero" className="min-h-screen flex flex-col justify-center items-center bg-blue-50 p-6 pt-40 md:pt-6">
+        {/* Video placeholder */}
+        <div className="w-full max-w-2xl h-64 md:h-80 rounded-lg bg-gray-200 fade-in mb-8">
+          {/* Empty space for future video */}
         </div>
-      </section>
 
-           {/* Cross-Brand Awareness */}
-      <section className="py-16 bg-gray-900 text-white">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h3 className="text-2xl lg:text-3xl font-bold mb-8">
-            Also from the creators of <span className="text-yellow-400">Singapore's most trusted</span> English and GP learning platforms
-          </h3>
-          
-          <div className="grid md:grid-cols-3 gap-8">
-            <div className="bg-gray-800 p-6 rounded-xl">
-              <div className="text-yellow-400 text-3xl font-black mb-2">EssayMaster</div>
-              <p className="text-gray-300">For O-Level English mastery</p>
-            </div>
-            
-            <div className="bg-gray-800 p-6 rounded-xl">
-              <div className="text-green-400 text-3xl font-black mb-2">CompreAce</div>
-              <p className="text-gray-300">For A-Level GP Paper 2 excellence</p>
-            </div>
-            
-            <div className="bg-gray-800 p-6 rounded-xl">
-              <div className="text-blue-400 text-3xl font-black mb-2">KnowledgeBank</div>
-              <p className="text-gray-300">For A-Level GP Paper 1 success</p>
-            </div>
+        {/* Text and form */}
+        <h1 className="text-3xl md:text-4xl font-semibold text-center mt-6 text-gray-800 fade-in">
+          Ace English Language Paper 2 with TextChamp
+        </h1>
+        <p className="text-center mt-2 text-gray-600 fade-in">
+          100+ JC students • 85% scored A/B
+        </p>
+
+        <form onSubmit={handleSignUp} className="mt-6 flex flex-col gap-3 w-full max-w-lg fade-in">
+          <input 
+            type="text" 
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Full Name"
+            className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200" 
+            required 
+          />
+          <input 
+            type="email" 
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email"
+            className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200" 
+            required 
+          />
+          <input 
+            type="password" 
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password"
+            className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200" 
+            required 
+          />
+          <button 
+            type="submit"
+            disabled={loading}
+            className="w-full bg-blue-600 text-white font-semibold px-6 py-3 rounded-lg hover:scale-105 transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-50"
+          >
+            {loading ? 'Signing up...' : 'Start Free Trial'}
+          </button>
+        </form>
+        
+        <div className="mt-4 text-center fade-in">
+          <small className="text-gray-500 block">No credit card. Cancel anytime.</small>
+          <p className="text-sm text-gray-600 mt-2">
+            Already have an account?{" "}
+            <Link href="/signin" className="text-blue-600 font-medium hover:underline">
+              Sign in here
+            </Link>
+          </p>
+        </div>
+
+        {/* Badges */}
+        <div className="flex flex-wrap justify-center gap-6 mt-8 fade-in">
+          <div className="flex items-center gap-2 text-gray-700">
+            <svg className="w-6 h-6 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            250+ case studies
           </div>
-          
-          <div className="mt-8 text-gray-400">
-            Trusted by over 10,000+ students across Singapore's top schools
+          <div className="flex items-center gap-2 text-gray-700">
+            <svg className="w-6 h-6 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/>
+              <path fillRule="evenodd" d="M4 5a2 2 0 012-2v1a1 1 0 002 0V3a2 2 0 012 2v6a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 2a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd"/>
+            </svg>
+            Exam-ready model essays
+          </div>
+          <div className="flex items-center gap-2 text-gray-700">
+            <svg className="w-6 h-6 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
+            </svg>
+            AI feedback in seconds
+          </div>
+          <div className="flex items-center gap-2 text-gray-700">
+            <svg className="w-6 h-6 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11 4a1 1 0 10-2 0v4a1 1 0 102 0V7zm-3 1a1 1 0 10-2 0v3a1 1 0 102 0V8zM8 9a1 1 0 00-2 0v2a1 1 0 102 0V9z" clipRule="evenodd"/>
+            </svg>
+            Track progress visually
           </div>
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="bg-white py-12 border-t border-gray-200">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <div className="text-2xl font-black text-indigo-600 mb-4">TextChamp</div>
-          <p className="text-gray-600 mb-6">Singapore's #1 O-Level English Paper 2 Mastery Platform</p>
-          
-          <div className="text-gray-700">
-            Already have an account? 
-            <button 
-              onClick={() => router.push('/signin')}
-              className="text-indigo-600 font-semibold hover:text-indigo-800 underline ml-1"
-            >
-              Sign in here
-            </button>
+      <footer className="text-center text-sm py-8 bg-blue-50 border-t border-gray-200">
+        <div className="max-w-2xl mx-auto px-6">
+          <div className="flex justify-center gap-6 mb-4">
+            <Link href="/privacy" className="text-gray-600 hover:text-blue-600 transition-colors">Privacy</Link>
+            <Link href="/terms" className="text-gray-600 hover:text-blue-600 transition-colors">Terms</Link>
+            <Link href="/contact" className="text-gray-600 hover:text-blue-600 transition-colors">Contact</Link>
           </div>
-          
-          <div className="mt-8 text-sm text-gray-500">
-            © 2024 TextChamp. All rights reserved. | Privacy Policy | Terms of Service
+          <div className="flex justify-center gap-4">
+            <a href="#" className="text-gray-600 hover:text-blue-600 transition-colors">
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M24 4.557c-.883.392-1.832.656-2.828.775 1.017-.609 1.798-1.574 2.165-2.724-.951.564-2.005.974-3.127 1.195-.897-.957-2.178-1.555-3.594-1.555-3.179 0-5.515 2.966-4.797 6.045-4.091-.205-7.719-2.165-10.148-5.144-1.29 2.213-.669 5.108 1.523 6.574-.806-.026-1.566-.247-2.229-.616-.054 2.281 1.581 4.415 3.949 4.89-.693.188-1.452.232-2.224.084.626 1.956 2.444 3.379 4.6 3.419-2.07 1.623-4.678 2.348-7.29 2.04 2.179 1.397 4.768 2.212 7.548 2.212 9.142 0 14.307-7.721 13.995-14.646.962-.695 1.797-1.562 2.457-2.549z"/>
+              </svg>
+            </a>
+            <a href="#" className="text-gray-600 hover:text-blue-600 transition-colors">
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M22.46 6c-.77.35-1.6.58-2.46.69.88-.53 1.56-1.37 1.88-2.38-.83.5-1.75.85-2.72 1.05C18.37 4.5 17.26 4 16 4c-2.35 0-4.27 1.92-4.27 4.29 0 .34.04.67.11.98C8.28 9.09 5.11 7.38 3 4.79c-.37.63-.58 1.37-.58 2.15 0 1.49.75 2.81 1.91 3.56-.71 0-1.37-.2-1.95-.5v.03c0 2.08 1.48 3.82 3.44 4.21a4.22 4.22 0 0 1-1.93.07 4.28 4.28 0 0 0 4 2.98 8.521 8.521 0 0 1-5.33 1.84c-.34 0-.68-.02-1.02-.06C3.44 20.29 5.7 21 8.12 21 16 21 20.33 14.46 20.33 8.79c0-.19 0-.37-.01-.56.84-.6 1.56-1.36 2.14-2.23z"/>
+              </svg>
+            </a>
+            <a href="#" className="text-gray-600 hover:text-blue-600 transition-colors">
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12.017 0C5.396 0 .029 5.367.029 11.987c0 5.079 3.158 9.417 7.618 11.174-.105-.949-.199-2.403.041-3.439.219-.937 1.406-5.957 1.406-5.957s-.359-.72-.359-1.781c0-1.663.967-2.911 2.168-2.911 1.024 0 1.518.769 1.518 1.688 0 1.029-.653 2.567-.992 3.992-.285 1.193.6 2.165 1.775 2.165 2.128 0 3.768-2.245 3.768-5.487 0-2.861-2.063-4.869-5.008-4.869-3.41 0-5.409 2.562-5.409 5.199 0 1.033.394 2.143.889 2.741.099.120.112.225.085.347-.09.375-.293 1.199-.334 1.363-.053.225-.172.271-.402.165-1.495-.69-2.433-2.878-2.433-4.646 0-3.776 2.748-7.252 7.92-7.252 4.158 0 7.392 2.967 7.392 6.923 0 4.135-2.607 7.462-6.233 7.462-1.214 0-2.357-.629-2.746-1.378l-.759 2.893c-.274 1.068-.999 2.404-1.487 3.216C9.075 23.763 10.5 24.001 12.017 24.001c6.624 0 11.99-5.367 11.99-11.988C24.007 5.367 18.641.001 12.017.001z"/>
+              </svg>
+            </a>
           </div>
-                  </div>
-        </footer>
-
-        {/* Mobile Modal */}
-        {showMobileModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4 relative">
-              {/* Close Button */}
-              <button 
-                onClick={() => setShowMobileModal(false)}
-                className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
-              >
-                <X size={24} />
-              </button>
-              
-              {/* Modal Content */}
-              <div className="text-center">
-                {/* Header */}
-                <h2 className="text-2xl font-black text-gray-900 mb-2">
-                  Your Success Story Starts Here.
-                </h2>
-                <h3 className="text-xl font-bold text-indigo-600 mb-6">
-                  TextChamp Makes It Happen.
-                </h3>
-                
-                {/* Body Text */}
-                <p className="text-lg text-gray-600 mb-8 leading-relaxed">
-                  Practice, Feedback, and Growth — All in One Place.<br />
-                  <strong>Ace Your English Comprehension with TextChamp!</strong>
-                </p>
-                
-                {/* CTA Button */}
-                <button 
-                  onClick={handleMobileSignup}
-                  className="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white py-4 rounded-xl font-bold text-lg shadow-xl transform hover:-translate-y-0.5 transition-all duration-300"
-                >
-                  <span className="mr-2">🚀</span>
-                  Start Practicing Now
-                </button>
-              </div>
-            </div>
+          <div className="mt-4 text-xs text-gray-500">
+            ©️ 2024 TextChamp. All rights reserved.
           </div>
-        )}
+        </div>
+      </footer>
 
-        {/* Desktop Modal */}
-        {showDesktopModal && (
-          <div 
-            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-            onClick={() => setShowDesktopModal(false)}
-          >
-            <div 
-              className="bg-white rounded-2xl max-w-lg w-full mx-4 relative max-h-[90vh] overflow-y-auto"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Close Button */}
-              <button 
-                onClick={() => setShowDesktopModal(false)}
-                className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 z-10"
-              >
-                <X size={24} />
-              </button>
-              
-              {/* Modal Content - Styled like the signup page */}
-              <div className="p-8">
-                <div className="text-center mb-6">
-                  <h2 className="text-2xl font-bold text-gray-900 mb-2">Create an Account</h2>
-                  <p className="text-gray-600">
-                    Enter your details to sign up for Text Champ
-                  </p>
-                </div>
-
-                {error && (
-                  <Alert className="mb-6 border-red-200 bg-red-50">
-                    <AlertCircle className="h-4 w-4 text-red-600" />
-                    <AlertDescription className="text-red-600">{error}</AlertDescription>
-                  </Alert>
-                )}
-                
-                                 <form onSubmit={handleSignupSubmit} className="space-y-4">
-                   <div className="grid grid-cols-2 gap-4">
-                     <div className="space-y-2">
-                       <Label htmlFor="firstName" className="text-gray-700 font-medium">First Name</Label>
-                       <Input
-                         id="firstName"
-                         value={firstName}
-                         onChange={(e) => setFirstName(e.target.value)}
-                         placeholder="John"
-                         required
-                       />
-                     </div>
-                     <div className="space-y-2">
-                       <Label htmlFor="lastName" className="text-gray-700 font-medium">Last Name</Label>
-                       <Input
-                         id="lastName"
-                         value={lastName}
-                         onChange={(e) => setLastName(e.target.value)}
-                         placeholder="Doe"
-                         required
-                       />
-                     </div>
-                   </div>
-                   
-                   <div className="space-y-2">
-                     <Label htmlFor="email" className="text-gray-700 font-medium">Email</Label>
-                     <Input
-                       id="email"
-                       type="email"
-                       value={email}
-                       onChange={(e) => setEmail(e.target.value)}
-                       placeholder="john.doe@example.com"
-                       required
-                     />
-                   </div>
-                   
-                   <div className="space-y-2">
-                     <Label htmlFor="password" className="text-gray-700 font-medium">Password</Label>
-                     <Input
-                       id="password"
-                       type="password"
-                       value={password}
-                       onChange={(e) => setPassword(e.target.value)}
-                       placeholder="••••••••"
-                       required
-                     />
-                   </div>
-                   
-                   <div className="space-y-2">
-                     <Label htmlFor="phone" className="text-gray-700 font-medium">Phone Number</Label>
-                     <Input
-                       id="phone"
-                       value={phone}
-                       onChange={(e) => setPhone(e.target.value)}
-                       placeholder="+1234567890"
-                       required
-                     />
-                   </div>
-                   
-                   <div className="space-y-2">
-                     <Label htmlFor="currentLevel" className="text-gray-700 font-medium">Current Level</Label>
-                     <Select value={currentLevel} onValueChange={setCurrentLevel} required>
-                       <SelectTrigger id="currentLevel" className="text-gray-900">
-                         <SelectValue placeholder="Select your current level" className="text-gray-500" />
-                       </SelectTrigger>
-                       <SelectContent>
-                         <SelectItem value="Secondary 1">Secondary 1</SelectItem>
-                         <SelectItem value="Secondary 2">Secondary 2</SelectItem>
-                         <SelectItem value="Secondary 3">Secondary 3</SelectItem>
-                         <SelectItem value="Secondary 4">Secondary 4</SelectItem>
-                         <SelectItem value="Secondary 5">Secondary 5</SelectItem>
-                         <SelectItem value="JC1">JC1</SelectItem>
-                         <SelectItem value="JC2">JC2</SelectItem>
-                       </SelectContent>
-                     </Select>
-                   </div>
-                   
-                   <div className="space-y-2">
-                     <Label htmlFor="schoolName" className="text-gray-700 font-medium">School Name</Label>
-                     <Input
-                       id="schoolName"
-                       value={schoolName}
-                       onChange={(e) => setSchoolName(e.target.value)}
-                       placeholder="Enter your school name"
-                       required
-                     />
-                   </div>
-                   
-                   <div className="space-y-2">
-                     <Label htmlFor="currentGrade" className="text-gray-700 font-medium">Current Grade</Label>
-                     <Input
-                       id="currentGrade"
-                       value={currentGrade}
-                       onChange={(e) => setCurrentGrade(e.target.value)}
-                       placeholder="A, B, C, etc."
-                       required
-                     />
-                   </div>
-                   
-                   <div className="space-y-2">
-                     <Label htmlFor="userType" className="text-gray-700 font-medium">I am a</Label>
-                     <Select value={userType} onValueChange={setUserType} required>
-                       <SelectTrigger id="userType" className="text-gray-900">
-                         <SelectValue placeholder="Select user type" className="text-gray-500" />
-                       </SelectTrigger>
-                       <SelectContent>
-                         <SelectItem value="Student">Student</SelectItem>
-                         <SelectItem value="Parent">Parent</SelectItem>
-                       </SelectContent>
-                     </Select>
-                   </div>
-                  
-                  <Button type="submit" className="w-full" disabled={isLoading}>
-                    {isLoading ? "Creating account..." : "Sign Up"}
-                  </Button>
-                </form>
-
-                <div className="mt-6 text-center">
-                  <p className="text-sm text-gray-600">
-                    Already have an account?{" "}
-                    <button 
-                      onClick={() => {
-                        setShowDesktopModal(false)
-                        router.push('/signin')
-                      }}
-                      className="text-indigo-600 font-medium hover:underline"
-                    >
-                      Sign in
-                    </button>
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        
-      </div>
-    )
-  } 
+      <style jsx>{`
+        .fade-in {
+          opacity: 0;
+          transform: translateY(30px);
+          transition: all 0.6s ease-out;
+        }
+        .fade-in.visible {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      `}</style>
+    </div>
+  )
+} 
