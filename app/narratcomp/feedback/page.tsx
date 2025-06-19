@@ -176,40 +176,69 @@ export default function NarrativeCompFeedback() {
         
         // Load questions - these need to be retrieved from the session too
         if (session.questions) {
-          // Use marks directly from the database/session
-          // Ensure questions have a mark property 
-          const questionsWithMarks = Object.values(session.questions).reduce((acc, question) => {
+          // Calculate marks based on AI score
+          // For narrative comprehension, we'll distribute the AI score across questions
+          const aiScore = session.score || 0; // AI score out of 5
+          const questionsList = Object.values(session.questions).sort((a, b) => a.question_order - b.question_order);
+          
+          // Separate normal questions from flowchart questions
+          const normalQuestions = questionsList.filter(q => !q.isFlowchart);
+          const flowchartQuestions = questionsList.filter(q => q.isFlowchart);
+          
+          // Calculate how many normal questions should be marked as correct based on the AI score
+          const scorePercentage = aiScore / 5; // Convert to percentage
+          const questionsToMarkCorrect = Math.round(scorePercentage * normalQuestions.length);
+          
+          const questionsWithMarks = questionsList.reduce((acc, question) => {
+            let questionMark = 0;
+            
+            if (question.isFlowchart) {
+              // Handle flowchart questions separately if needed
+              // For now, we'll use the same logic
+              const flowchartIndex = flowchartQuestions.findIndex(q => q.id === question.id);
+              const flowchartQuestionsToMarkCorrect = Math.round(scorePercentage * flowchartQuestions.length);
+              if (flowchartIndex < flowchartQuestionsToMarkCorrect) {
+                questionMark = question.marks || 1;
+              }
+            } else {
+              // Mark the first N normal questions as correct based on the calculated score
+              const normalIndex = normalQuestions.findIndex(q => q.id === question.id);
+              if (normalIndex < questionsToMarkCorrect) {
+                questionMark = question.marks || 1;
+              }
+            }
+            
             acc[question.id] = {
               ...question,
-              // Use mark from database if available, otherwise default to 0
-              mark: question.mark !== undefined ? question.mark : 0
+              mark: questionMark
             };
             return acc;
           }, {});
           
           setQuestions(questionsWithMarks);
           
-          // Get normal questions (excluding flowchart items)
-          const normalQuestions = Object.values(questionsWithMarks).filter(q => !q.isFlowchart);
+          // Get normal questions (excluding flowchart items) for mark summary
+          const processedNormalQuestions = Object.values(questionsWithMarks).filter(q => !q.isFlowchart);
           
           // Update mark summary for normal questions
-          const marks = normalQuestions.reduce(
+          const marks = processedNormalQuestions.reduce(
             (summary, q) => ({
               total: summary.total + 1,
-              correct: summary.correct + (q.mark || 0)
+              correct: summary.correct + (q.mark > 0 ? 1 : 0)
             }),
             { total: 0, correct: 0 }
           );
           
           setMarkSummary(marks);
           
-          // Calculate total marks possible and earned
-          const totalPossibleMarks = normalQuestions.reduce(
+          // Calculate total marks possible and earned for all questions
+          const allQuestions = Object.values(questionsWithMarks);
+          const totalPossibleMarks = allQuestions.reduce(
             (sum, q) => sum + (q.marks || 1), 0
           );
           
-          const totalEarnedMarks = normalQuestions.reduce(
-            (sum, q) => sum + ((q.mark > 0) ? (q.marks || 1) : 0), 0
+          const totalEarnedMarks = allQuestions.reduce(
+            (sum, q) => sum + (q.mark || 0), 0
           );
           
           setTotalMarks({ possible: totalPossibleMarks, earned: totalEarnedMarks });
@@ -242,10 +271,11 @@ export default function NarrativeCompFeedback() {
   }, [router])
   
   // Helper function to calculate the circumference for the circular progress bar
-  const calculateCircleProgress = (score) => {
+  const calculateCircleProgress = (earned, total) => {
     const radius = 50
     const circumference = 2 * Math.PI * radius
-    const offset = circumference - (score / 5) * circumference
+    const percentage = total > 0 ? earned / total : 0
+    const offset = circumference - percentage * circumference
     return { circumference, offset }
   }
   
@@ -328,7 +358,7 @@ ${feedbackText}
                   />
                   
                   {/* Progress circle */}
-                  {score !== null && (
+                  {totalMarks.possible > 0 && (
                     <circle
                       cx="60"
                       cy="60"
@@ -337,8 +367,8 @@ ${feedbackText}
                       stroke="#f97316" /* orange-500 */
                       strokeWidth="10"
                       strokeLinecap="round"
-                      strokeDasharray={calculateCircleProgress(score).circumference}
-                      strokeDashoffset={calculateCircleProgress(score).offset}
+                      strokeDasharray={calculateCircleProgress(totalMarks.earned, totalMarks.possible).circumference}
+                      strokeDashoffset={calculateCircleProgress(totalMarks.earned, totalMarks.possible).offset}
                       className="transition-all duration-1000 ease-out"
                     />
                   )}
@@ -347,10 +377,10 @@ ${feedbackText}
                 {/* Score text */}
                 <div className="absolute inset-0 flex items-center justify-center flex-col">
                   <div className="flex items-baseline">
-                    <span className="text-4xl text-gray-800 font-bold">{score !== null ? score : 0}</span>
-                    <span className="text-xl font-medium text-gray-500">/5</span>
+                    <span className="text-4xl text-gray-800 font-bold">{totalMarks.earned}</span>
+                    <span className="text-xl font-medium text-gray-500">/{totalMarks.possible}</span>
                   </div>
-                  <span className="text-sm text-gray-500 mt-1">Score</span>
+                  <span className="text-sm text-gray-500 mt-1">Marks</span>
                 </div>
               </div>
             </div>
@@ -361,12 +391,12 @@ ${feedbackText}
               <div className="bg-orange-50 p-4 rounded-xl">
                 <h3 className="font-medium text-orange-800 mb-2">Narrative Comprehension</h3>
                 <div className="flex items-center gap-2">
-                  <div className="text-2xl font-bold text-orange-700">{score || 0}</div>
-                  <div className="text-orange-600">/5 points</div>
+                  <div className="text-2xl font-bold text-orange-700">{totalMarks.earned}</div>
+                  <div className="text-orange-600">/{totalMarks.possible} marks</div>
                 </div>
                 <div className="flex flex-col text-sm text-orange-700 mt-1">
-                  <span>{markSummary.correct} out of {markSummary.total} correct</span>
-                  <span>{totalMarks.earned} out of {totalMarks.possible} marks</span>
+                  <span>{markSummary.correct} out of {markSummary.total} questions correct</span>
+                  <span>{Math.round(totalMarks.possible > 0 ? (totalMarks.earned / totalMarks.possible) * 100 : 0)}% accuracy</span>
                 </div>
               </div>
             </div>

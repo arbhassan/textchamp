@@ -286,21 +286,61 @@ export default function SectionC() {
         
         // Enhance questions with feedback marks before saving
         const enhancedQuestions = questions.map((question, index) => {
-          // Determine if this question is correct based on result data (if available)
-          // Default to 0 marks but this should be updated from evaluation result
-          const isCorrect = result.correctAnswers && result.correctAnswers[index] === true;
+          const questionId = question.id || `question-${question.question_order}`;
+          const userAnswer = answers[questionId] || "";
+          const idealAnswer = question.ideal_answer || "";
+          
+          // Simple string similarity check for marking
+          // Normalize both answers for comparison
+          const normalizeAnswer = (answer) => {
+            return answer
+              .toLowerCase()
+              .replace(/[^\w\s]/g, '') // Remove punctuation
+              .replace(/\s+/g, ' ') // Normalize whitespace
+              .trim();
+          };
+          
+          const normalizedUserAnswer = normalizeAnswer(userAnswer);
+          const normalizedIdealAnswer = normalizeAnswer(idealAnswer);
+          
+          // Check if answers are very similar (exact match or high similarity)
+          let isCorrect = false;
+          
+          if (normalizedUserAnswer && normalizedIdealAnswer) {
+            // Exact match
+            if (normalizedUserAnswer === normalizedIdealAnswer) {
+              isCorrect = true;
+            } else {
+              // Check for high similarity (contains most key terms)
+              const userWords = normalizedUserAnswer.split(' ').filter(w => w.length > 2);
+              const idealWords = normalizedIdealAnswer.split(' ').filter(w => w.length > 2);
+              
+              if (idealWords.length > 0) {
+                const matchingWords = userWords.filter(word => 
+                  idealWords.some(idealWord => 
+                    idealWord.includes(word) || word.includes(idealWord)
+                  )
+                );
+                
+                // Consider correct if user captured most key concepts (80% threshold)
+                const similarity = matchingWords.length / idealWords.length;
+                isCorrect = similarity >= 0.8;
+              }
+            }
+          }
+          
           const mark = isCorrect ? (question.marks || 1) : 0;
           
           return {
             ...question,
-            id: question.id || `question-${question.question_order}`,
+            id: questionId,
             question_text: question.question_text,
             text: question.question_text, // Add text field for consistency with feedback page expectations
             ideal_answer: question.ideal_answer,
             answer: question.ideal_answer, // Add answer field for consistency with feedback page expectations
             marks: question.marks || 1, // Ensure we have a marks field
             mark: mark, // Add the mark field (0 for incorrect, marks value for correct)
-            userAnswer: answers[question.id || `question-${question.question_order}`] || "" // Include user's answer
+            userAnswer: userAnswer // Include user's answer
           }
         });
         

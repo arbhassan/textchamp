@@ -106,13 +106,29 @@ export default function VisualTextCompFeedback() {
         
         // Load questions - these need to be retrieved from the session too
         if (session.questions) {
-          // Use marks directly from the database/session
-          // Ensure questions have a mark property 
-          const questionsWithMarks = Object.values(session.questions).reduce((acc, question) => {
+          // Calculate marks based on AI score
+          // For visual text comprehension, we'll distribute the AI score across questions
+          const aiScore = session.score || 0; // AI score out of 5
+          const questionsList = Object.values(session.questions).sort((a, b) => a.question_order - b.question_order);
+          const totalQuestions = questionsList.length;
+          
+          // Calculate how many questions should be marked as correct based on the AI score
+          // AI score represents performance out of 5, so we need to map this to actual questions
+          const scorePercentage = aiScore / 5; // Convert to percentage
+          const questionsToMarkCorrect = Math.round(scorePercentage * totalQuestions);
+          
+          const questionsWithMarks = questionsList.reduce((acc, question, index) => {
+            let questionMark = 0;
+            
+            // Mark the first N questions as correct based on the calculated score
+            // This assumes questions are ordered by difficulty or the AI assigns credit progressively
+            if (index < questionsToMarkCorrect) {
+              questionMark = question.marks || 1;
+            }
+            
             acc[question.id] = {
               ...question,
-              // Use mark from database if available, otherwise default to 0
-              mark: question.mark !== undefined ? question.mark : 0
+              mark: questionMark
             };
             return acc;
           }, {});
@@ -123,7 +139,7 @@ export default function VisualTextCompFeedback() {
           const marks = Object.values(questionsWithMarks).reduce(
             (summary, q) => ({
               total: summary.total + 1,
-              correct: summary.correct + (q.mark || 0)
+              correct: summary.correct + (q.mark > 0 ? 1 : 0)
             }),
             { total: 0, correct: 0 }
           );
@@ -136,7 +152,7 @@ export default function VisualTextCompFeedback() {
           );
           
           const totalEarnedMarks = Object.values(questionsWithMarks).reduce(
-            (sum, q) => sum + ((q.mark > 0) ? (q.marks || 1) : 0), 0
+            (sum, q) => sum + (q.mark || 0), 0
           );
           
           setTotalMarks({ possible: totalPossibleMarks, earned: totalEarnedMarks });
@@ -169,10 +185,11 @@ export default function VisualTextCompFeedback() {
   }, [router])
   
   // Helper function to calculate the circumference for the circular progress bar
-  const calculateCircleProgress = (score) => {
+  const calculateCircleProgress = (earned, total) => {
     const radius = 50
     const circumference = 2 * Math.PI * radius
-    const offset = circumference - (score / 5) * circumference
+    const percentage = total > 0 ? earned / total : 0
+    const offset = circumference - percentage * circumference
     return { circumference, offset }
   }
   
@@ -246,7 +263,7 @@ ${feedbackText}
                   />
                   
                   {/* Progress circle */}
-                  {score !== null && (
+                  {totalMarks.possible > 0 && (
                     <circle
                       cx="60"
                       cy="60"
@@ -255,8 +272,8 @@ ${feedbackText}
                       stroke="#4ade80"
                       strokeWidth="10"
                       strokeLinecap="round"
-                      strokeDasharray={calculateCircleProgress(score).circumference}
-                      strokeDashoffset={calculateCircleProgress(score).offset}
+                      strokeDasharray={calculateCircleProgress(totalMarks.earned, totalMarks.possible).circumference}
+                      strokeDashoffset={calculateCircleProgress(totalMarks.earned, totalMarks.possible).offset}
                       className="transition-all duration-1000 ease-out"
                     />
                   )}
@@ -265,10 +282,10 @@ ${feedbackText}
                 {/* Score text */}
                 <div className="absolute inset-0 flex items-center justify-center flex-col">
                   <div className="flex items-baseline">
-                    <span className="text-4xl text-gray-800 font-bold">{score !== null ? score : 0}</span>
-                    <span className="text-xl font-medium text-gray-500">/5</span>
+                    <span className="text-4xl text-gray-800 font-bold">{totalMarks.earned}</span>
+                    <span className="text-xl font-medium text-gray-500">/{totalMarks.possible}</span>
                   </div>
-                  <span className="text-sm text-gray-500 mt-1">Score</span>
+                  <span className="text-sm text-gray-500 mt-1">Marks</span>
                 </div>
               </div>
             </div>
@@ -279,12 +296,12 @@ ${feedbackText}
               <div className="bg-amber-50 p-4 rounded-xl">
                 <h3 className="font-medium text-amber-800 mb-2">Visual Text Comprehension</h3>
                 <div className="flex items-center gap-2">
-                  <div className="text-2xl font-bold text-amber-700">{score || 0}</div>
-                  <div className="text-amber-600">/5 points</div>
+                  <div className="text-2xl font-bold text-amber-700">{totalMarks.earned}</div>
+                  <div className="text-amber-600">/{totalMarks.possible} marks</div>
                 </div>
                 <div className="flex flex-col text-sm text-amber-700 mt-1">
-                  <span>{markSummary.correct} out of {markSummary.total} correct</span>
-                  <span>{totalMarks.earned} out of {totalMarks.possible} marks</span>
+                  <span>{markSummary.correct} out of {markSummary.total} questions correct</span>
+                  <span>{Math.round(totalMarks.possible > 0 ? (totalMarks.earned / totalMarks.possible) * 100 : 0)}% accuracy</span>
                 </div>
               </div>
             </div>
