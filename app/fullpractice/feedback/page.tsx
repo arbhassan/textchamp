@@ -202,16 +202,53 @@ export default function FullPracticeFeedback() {
         
         // Load questions - these need to be retrieved from the session too
         if (session.questionsA) {
-          // Use marks directly from the database/session
-          // Ensure questions have a mark property 
-          const questionsWithMarks = Object.values(session.questionsA).reduce((acc, question) => {
-            acc[question.id] = {
-              ...question,
-              // Use mark from database if available, otherwise default to 0
-              mark: question.mark !== undefined ? question.mark : 0
-            };
-            return acc;
-          }, {});
+          // For Section A (Visual), calculate marks based on AI score and answered questions
+          const aiScore = session.sectionScores?.A || 0;
+          const questionsList = Array.isArray(session.questionsA) ? session.questionsA : Object.values(session.questionsA);
+          const sortedQuestions = questionsList.sort((a, b) => a.question_order - b.question_order);
+          
+          // Check if marks are already calculated
+          const hasCalculatedMarks = questionsList.some(q => q.mark !== undefined);
+          
+          let questionsWithMarks;
+          
+          if (hasCalculatedMarks) {
+            // Use existing marks
+            questionsWithMarks = sortedQuestions.reduce((acc, question) => {
+              acc[question.id] = {
+                ...question,
+                mark: question.mark || 0
+              };
+              return acc;
+            }, {});
+          } else {
+            // Calculate marks based on AI score and answered questions
+            const questionsWithAnswers = sortedQuestions.filter(q => {
+              const userAnswer = q.userAnswer || session.answersA?.[q.id] || "";
+              return userAnswer.trim() !== "";
+            });
+            
+            const scorePercentage = aiScore / 5;
+            const answeredQuestionsToMarkCorrect = Math.round(scorePercentage * questionsWithAnswers.length);
+            
+            questionsWithMarks = sortedQuestions.reduce((acc, question) => {
+              let questionMark = 0;
+              
+              const userAnswer = question.userAnswer || session.answersA?.[question.id] || "";
+              if (userAnswer.trim() !== "") {
+                const answeredIndex = questionsWithAnswers.findIndex(q => q.id === question.id);
+                if (answeredIndex !== -1 && answeredIndex < answeredQuestionsToMarkCorrect) {
+                  questionMark = question.marks || 1;
+                }
+              }
+              
+              acc[question.id] = {
+                ...question,
+                mark: questionMark
+              };
+              return acc;
+            }, {});
+          }
           
           setQuestionsA(questionsWithMarks);
           
@@ -219,7 +256,7 @@ export default function FullPracticeFeedback() {
           const sectionAMarks = Object.values(questionsWithMarks).reduce(
             (summary, q) => ({
               total: summary.total + 1,
-              correct: summary.correct + (q.mark || 0)
+              correct: summary.correct + (q.mark > 0 ? 1 : 0)
             }),
             { total: 0, correct: 0 }
           );
@@ -235,7 +272,7 @@ export default function FullPracticeFeedback() {
           );
           
           const totalEarnedMarks = Object.values(questionsWithMarks).reduce(
-            (sum, q) => sum + ((q.mark > 0) ? (q.marks || 1) : 0), 0
+            (sum, q) => sum + (q.mark || 0), 0
           );
           
           setTotalMarks(prev => ({
@@ -265,15 +302,65 @@ export default function FullPracticeFeedback() {
             }));
           }
           
-          // Use marks directly from the database/session
-          const questionsWithMarks = Object.values(session.questionsB).reduce((acc, question) => {
-            acc[question.id] = {
-              ...question,
-              // Use mark from database if available, otherwise default to 0
-              mark: question.mark !== undefined ? question.mark : 0
-            };
-            return acc;
-          }, {});
+          // For Section B (Narrative), calculate marks based on AI score and answered questions
+          const aiScore = session.sectionScores?.B || 0;
+          const questionsList = Array.isArray(session.questionsB) ? session.questionsB : Object.values(session.questionsB);
+          
+          // Separate normal questions from flowchart questions
+          const normalQuestions = questionsList.filter(q => !q.isFlowchart);
+          const flowchartQuestions = questionsList.filter(q => q.isFlowchart);
+          
+          // Check if marks are already calculated
+          const hasCalculatedMarks = questionsList.some(q => q.mark !== undefined);
+          
+          let questionsWithMarks;
+          
+          if (hasCalculatedMarks) {
+            // Use existing marks
+            questionsWithMarks = questionsList.reduce((acc, question) => {
+              acc[question.id] = {
+                ...question,
+                mark: question.mark || 0
+              };
+              return acc;
+            }, {});
+          } else {
+            // Calculate marks based on AI score and answered questions
+            const scorePercentage = aiScore / 5;
+            
+            questionsWithMarks = questionsList.reduce((acc, question) => {
+              let questionMark = 0;
+              
+              if (question.isFlowchart) {
+                // Handle flowchart questions
+                const flowchartQuestionsToMarkCorrect = Math.round(scorePercentage * flowchartQuestions.length);
+                const flowchartIndex = flowchartQuestions.findIndex(q => q.id === question.id);
+                if (flowchartIndex < flowchartQuestionsToMarkCorrect) {
+                  questionMark = question.marks || 1;
+                }
+              } else {
+                // Handle normal questions - only assign marks if answered
+                const userAnswer = question.userAnswer || session.answersB?.[question.id] || "";
+                if (userAnswer.trim() !== "") {
+                  const answeredNormalQuestions = normalQuestions.filter(q => {
+                    const ans = q.userAnswer || session.answersB?.[q.id] || "";
+                    return ans.trim() !== "";
+                  });
+                  const normalQuestionsToMarkCorrect = Math.round(scorePercentage * answeredNormalQuestions.length);
+                  const normalIndex = answeredNormalQuestions.findIndex(q => q.id === question.id);
+                  if (normalIndex !== -1 && normalIndex < normalQuestionsToMarkCorrect) {
+                    questionMark = question.marks || 1;
+                  }
+                }
+              }
+              
+              acc[question.id] = {
+                ...question,
+                mark: questionMark
+              };
+              return acc;
+            }, {});
+          }
           
           setQuestionsB(questionsWithMarks);
           
@@ -284,7 +371,7 @@ export default function FullPracticeFeedback() {
           const sectionBMarks = regularQuestions.reduce(
             (summary, q) => ({
               total: summary.total + 1,
-              correct: summary.correct + (q.mark || 0)
+              correct: summary.correct + (q.mark > 0 ? 1 : 0)
             }),
             { total: 0, correct: 0 }
           );
@@ -294,13 +381,14 @@ export default function FullPracticeFeedback() {
             B: sectionBMarks
           }));
           
-          // Calculate total marks possible and earned
-          const totalPossibleMarks = regularQuestions.reduce(
+          // Calculate total marks possible and earned for all questions
+          const allQuestions = Object.values(questionsWithMarks);
+          const totalPossibleMarks = allQuestions.reduce(
             (sum, q) => sum + (q.marks || 1), 0
           );
           
-          const totalEarnedMarks = regularQuestions.reduce(
-            (sum, q) => sum + ((q.mark > 0) ? (q.marks || 1) : 0), 0
+          const totalEarnedMarks = allQuestions.reduce(
+            (sum, q) => sum + (q.mark || 0), 0
           );
           
           setTotalMarks(prev => ({
@@ -310,15 +398,53 @@ export default function FullPracticeFeedback() {
         }
         
         if (session.questionsC) {
-          // Use marks directly from the database/session
-          const questionsWithMarks = Object.values(session.questionsC).reduce((acc, question) => {
-            acc[question.id] = {
-              ...question,
-              // Use mark from database if available, otherwise default to 0
-              mark: question.mark !== undefined ? question.mark : 0
-            };
-            return acc;
-          }, {});
+          // For Section C (Non-Narrative), calculate marks based on AI score and answered questions
+          const aiScore = session.sectionScores?.C || 0;
+          const questionsList = Array.isArray(session.questionsC) ? session.questionsC : Object.values(session.questionsC);
+          const sortedQuestions = questionsList.sort((a, b) => a.question_order - b.question_order);
+          
+          // Check if marks are already calculated
+          const hasCalculatedMarks = questionsList.some(q => q.mark !== undefined);
+          
+          let questionsWithMarks;
+          
+          if (hasCalculatedMarks) {
+            // Use existing marks
+            questionsWithMarks = sortedQuestions.reduce((acc, question) => {
+              acc[question.id] = {
+                ...question,
+                mark: question.mark || 0
+              };
+              return acc;
+            }, {});
+          } else {
+            // Calculate marks based on AI score and answered questions
+            const questionsWithAnswers = sortedQuestions.filter(q => {
+              const userAnswer = q.userAnswer || session.answersC?.[q.id] || "";
+              return userAnswer.trim() !== "";
+            });
+            
+            const scorePercentage = aiScore / 5;
+            const answeredQuestionsToMarkCorrect = Math.round(scorePercentage * questionsWithAnswers.length);
+            
+            questionsWithMarks = sortedQuestions.reduce((acc, question) => {
+              let questionMark = 0;
+              
+              const userAnswer = question.userAnswer || session.answersC?.[question.id] || "";
+              if (userAnswer.trim() !== "") {
+                const answeredIndex = questionsWithAnswers.findIndex(q => q.id === question.id);
+                if (answeredIndex !== -1 && answeredIndex < answeredQuestionsToMarkCorrect) {
+                  questionMark = question.marks || 1;
+                }
+              }
+              
+              acc[question.id] = {
+                ...question,
+                mark: questionMark
+              };
+              return acc;
+            }, {});
+          }
           
           setQuestionsC(questionsWithMarks);
           
@@ -326,7 +452,7 @@ export default function FullPracticeFeedback() {
           const sectionCMarks = Object.values(questionsWithMarks).reduce(
             (summary, q) => ({
               total: summary.total + 1,
-              correct: summary.correct + (q.mark || 0)
+              correct: summary.correct + (q.mark > 0 ? 1 : 0)
             }),
             { total: 0, correct: 0 }
           );
@@ -342,7 +468,7 @@ export default function FullPracticeFeedback() {
           );
           
           const totalEarnedMarks = Object.values(questionsWithMarks).reduce(
-            (sum, q) => sum + ((q.mark > 0) ? (q.marks || 1) : 0), 0
+            (sum, q) => sum + (q.mark || 0), 0
           );
           
           setTotalMarks(prev => ({
@@ -374,10 +500,11 @@ export default function FullPracticeFeedback() {
   }, [router])
   
   // Helper function to calculate the circumference for the circular progress bar
-  const calculateCircleProgress = (score) => {
+  const calculateCircleProgress = (earned, total) => {
     const radius = 50
     const circumference = 2 * Math.PI * radius
-    const offset = circumference - (score / 5) * circumference
+    const percentage = total > 0 ? earned / total : 0
+    const offset = circumference - percentage * circumference
     return { circumference, offset }
   }
   
@@ -462,7 +589,7 @@ ${feedbackText}
                   />
                   
                   {/* Progress circle */}
-                  {sectionScores.C !== null && (
+                  {totalMarks.C.possible > 0 && (
                     <circle
                       cx="60"
                       cy="60"
@@ -471,8 +598,8 @@ ${feedbackText}
                       stroke="#4ade80"
                       strokeWidth="10"
                       strokeLinecap="round"
-                      strokeDasharray={calculateCircleProgress(sectionScores.C).circumference}
-                      strokeDashoffset={calculateCircleProgress(sectionScores.C).offset}
+                      strokeDasharray={calculateCircleProgress(totalMarks.C.earned, totalMarks.C.possible).circumference}
+                      strokeDashoffset={calculateCircleProgress(totalMarks.C.earned, totalMarks.C.possible).offset}
                       className="transition-all duration-1000 ease-out"
                     />
                   )}
@@ -481,10 +608,10 @@ ${feedbackText}
                 {/* Score text */}
                 <div className="absolute inset-0 flex items-center justify-center flex-col">
                   <div className="flex items-baseline">
-                    <span className="text-4xl text-gray-800 font-bold">{sectionScores.C !== null ? sectionScores.C : 0}</span>
-                    <span className="text-xl font-medium text-gray-500">/5</span>
+                    <span className="text-4xl text-gray-800 font-bold">{totalMarks.C.earned}</span>
+                    <span className="text-xl font-medium text-gray-500">/{totalMarks.C.possible}</span>
                   </div>
-                  <span className="text-sm text-gray-500 mt-1">Section C</span>
+                  <span className="text-sm text-gray-500 mt-1">Marks</span>
                 </div>
               </div>
             </div>
@@ -495,12 +622,12 @@ ${feedbackText}
               <div className="bg-amber-50 p-4 rounded-xl">
                 <h3 className="font-medium text-amber-800 mb-2">Section A</h3>
                 <div className="flex items-center gap-2">
-                  <div className="text-2xl font-bold text-amber-700">{sectionScores.A || 0}</div>
-                  <div className="text-amber-600">/5 points</div>
+                  <div className="text-2xl font-bold text-amber-700">{totalMarks.A.earned}</div>
+                  <div className="text-amber-600">/{totalMarks.A.possible} marks</div>
                 </div>
                 <div className="flex flex-col text-sm text-amber-700 mt-1">
-                  <span>{markSummary.A.correct} out of {markSummary.A.total} correct</span>
-                  <span>{totalMarks.A.earned} out of {totalMarks.A.possible} marks</span>
+                  <span>{markSummary.A.correct} out of {markSummary.A.total} questions correct</span>
+                  <span>{Math.round(totalMarks.A.possible > 0 ? (totalMarks.A.earned / totalMarks.A.possible) * 100 : 0)}% accuracy</span>
                 </div>
               </div>
               
@@ -508,12 +635,12 @@ ${feedbackText}
               <div className="bg-orange-50 p-4 rounded-xl">
                 <h3 className="font-medium text-orange-800 mb-2">Section B</h3>
                 <div className="flex items-center gap-2">
-                  <div className="text-2xl font-bold text-orange-700">{sectionScores.B || 0}</div>
-                  <div className="text-orange-600">/5 points</div>
+                  <div className="text-2xl font-bold text-orange-700">{totalMarks.B.earned}</div>
+                  <div className="text-orange-600">/{totalMarks.B.possible} marks</div>
                 </div>
                 <div className="flex flex-col text-sm text-orange-700 mt-1">
-                  <span>{markSummary.B.correct} out of {markSummary.B.total} correct</span>
-                  <span>{totalMarks.B.earned} out of {totalMarks.B.possible} marks</span>
+                  <span>{markSummary.B.correct} out of {markSummary.B.total} questions correct</span>
+                  <span>{Math.round(totalMarks.B.possible > 0 ? (totalMarks.B.earned / totalMarks.B.possible) * 100 : 0)}% accuracy</span>
                 </div>
               </div>
               
@@ -521,30 +648,28 @@ ${feedbackText}
               <div className="bg-purple-50 p-4 rounded-xl">
                 <h3 className="font-medium text-purple-800 mb-2">Section C</h3>
                 <div className="flex items-center gap-2">
-                  <div className="text-2xl font-bold text-purple-700">{sectionScores.C || 0}</div>
-                  <div className="text-purple-600">/5 points</div>
+                  <div className="text-2xl font-bold text-purple-700">{totalMarks.C.earned}</div>
+                  <div className="text-purple-600">/{totalMarks.C.possible} marks</div>
                 </div>
                 <div className="flex flex-col text-sm text-purple-700 mt-1">
-                  <span>{markSummary.C.correct} out of {markSummary.C.total} correct</span>
-                  <span>{totalMarks.C.earned} out of {totalMarks.C.possible} marks</span>
+                  <span>{markSummary.C.correct} out of {markSummary.C.total} questions correct</span>
+                  <span>{Math.round(totalMarks.C.possible > 0 ? (totalMarks.C.earned / totalMarks.C.possible) * 100 : 0)}% accuracy</span>
                 </div>
               </div>
               
               {/* Total Score */}
               <div className="col-span-3 bg-blue-50 p-4 rounded-xl">
                 <h3 className="font-medium text-blue-800 mb-2">Overall Score</h3>
-                <div className="flex justify-between">
+                <div className="flex justify-between items-center">
                   <div className="flex items-center gap-2">
-                    <div className="text-2xl font-bold text-blue-700">
-                      {((sectionScores.A || 0) + (sectionScores.B || 0) + (sectionScores.C || 0))}
-                    </div>
-                    <div className="text-blue-600">/15 points</div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="text-lg font-bold text-blue-700">
+                    <div className="text-3xl font-bold text-blue-700">
                       {totalMarks.A.earned + totalMarks.B.earned + totalMarks.C.earned}
                     </div>
-                    <div className="text-blue-600">/{totalMarks.A.possible + totalMarks.B.possible + totalMarks.C.possible} total marks</div>
+                    <div className="text-blue-600">/{totalMarks.A.possible + totalMarks.B.possible + totalMarks.C.possible} marks</div>
+                  </div>
+                  <div className="flex items-center gap-4 text-sm text-blue-700">
+                    <span>{markSummary.A.correct + markSummary.B.correct + markSummary.C.correct} out of {markSummary.A.total + markSummary.B.total + markSummary.C.total} questions correct</span>
+                    <span>{Math.round((totalMarks.A.possible + totalMarks.B.possible + totalMarks.C.possible) > 0 ? ((totalMarks.A.earned + totalMarks.B.earned + totalMarks.C.earned) / (totalMarks.A.possible + totalMarks.B.possible + totalMarks.C.possible)) * 100 : 0)}% accuracy</span>
                   </div>
                 </div>
               </div>
