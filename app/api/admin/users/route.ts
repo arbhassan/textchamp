@@ -28,14 +28,33 @@ export async function GET(request: Request) {
     
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
     
-    // Fetch users with service role (only works with admin key)
-    const { data, error } = await supabaseAdmin.auth.admin.listUsers()
+    // Fetch all users using pagination
+    let allUsers: any[] = []
+    let page = 1
+    const perPage = 1000 // Maximum allowed per page
+    let hasMore = true
     
-    if (error) {
-      throw error
+    while (hasMore) {
+      const { data, error } = await supabaseAdmin.auth.admin.listUsers({
+        page,
+        perPage
+      })
+      
+      if (error) {
+        throw error
+      }
+      
+      if (data.users && data.users.length > 0) {
+        allUsers = allUsers.concat(data.users)
+        // If we got fewer users than perPage, we've reached the end
+        hasMore = data.users.length === perPage
+        page++
+      } else {
+        hasMore = false
+      }
     }
     
-    return NextResponse.json({ users: data.users }, { status: 200 })
+    return NextResponse.json({ users: allUsers }, { status: 200 })
   } catch (error) {
     console.error('Error fetching users:', error)
     const errorMessage = error instanceof Error ? error.message : 'Failed to fetch users'
